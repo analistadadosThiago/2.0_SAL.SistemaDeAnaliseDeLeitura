@@ -1,0 +1,5 @@
+{
+  "name": "SAL – Sistema de Análise de Leitura",
+  "description": "Sistema profissional para acompanhamento e análise de desempenho de leituristas de medidores de energia elétrica.",
+  "requestFramePermissions": []
+}
