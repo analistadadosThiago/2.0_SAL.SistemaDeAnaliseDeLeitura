@@ -1,53 +1,18 @@
-import { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { supabase } from './lib/supabase';
-import { Session } from '@supabase/supabase-js';
 import { 
   Search, 
   Users, 
   Camera, 
   Printer, 
   Clock, 
-  ListOrdered,
-  Loader2
+  ListOrdered
 } from 'lucide-react';
 
 import Layout from './components/Layout';
-import Auth from './components/Auth';
 import Dashboard from './pages/Dashboard';
 import PlaceholderPage from './pages/Placeholder';
 
 export default function App() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f5f5f5]">
-        <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
-      </div>
-    );
-  }
-
-  if (!session) {
-    return <Auth />;
-  }
-
   return (
     <Router>
       <Layout>
