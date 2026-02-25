@@ -83,21 +83,16 @@ export default function ControleLeiturista() {
         key: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Configurada' : 'MISSING'
       });
 
-      // Try RPC first for performance
-      const { data: rpcData, error: rpcErr } = await supabase.rpc('get_matriculas');
+      // Optimized fetch for matriculas to avoid timeout
+      const { data, error } = await supabase
+        .from('"LeituraGeral"')
+        .select('matr')
+        .limit(10000);
       
-      if (!rpcErr && rpcData) {
-        matriculas = (rpcData as any[]).map(item => typeof item === 'object' ? item.matr : item).sort();
-      } else {
-        // Fallback to table query with quoted name
-        const { data, error } = await supabase
-          .from('"LeituraGeral"')
-          .select('matr')
-          .not('matr', 'is', null);
-        
-        if (error) throw error;
-        matriculas = Array.from(new Set((data || []).map(item => item.matr))).sort();
-      }
+      if (error) throw error;
+      
+      // Use Set for unique values in JS to avoid slow DISTINCT in DB
+      matriculas = [...new Set((data || []).map(item => item.matr))].sort();
     } catch (e) {
       console.error('Erro ao buscar matrículas:', e);
     }
@@ -149,7 +144,36 @@ export default function ControleLeiturista() {
         return;
       }
 
-      setResults(data || []);
+      // Normalization and Manual Summation Logic
+      const processedData = data.map((item: any) => {
+        const tipo = String(item.tipo || '').trim().toLowerCase();
+        let urb = Number(item.leit_urb || 0);
+        let rural = Number(item.leit_rural || 0);
+        let povoado = Number(item.leit_povoado || 0);
+
+        // If values are zero, check tipo for manual assignment
+        if (urb === 0 && rural === 0 && povoado === 0 && item.tipo) {
+          if (tipo === 'urbano') urb = 1;
+          else if (tipo === 'rural') rural = 1;
+          else if (tipo === 'povoado') povoado = 1;
+        }
+
+        const total = urb + rural + povoado;
+        const impedimentos = Number(item.impedimentos || 0);
+        const indicador = total > 0 ? (impedimentos / total) * 100 : 0;
+
+        return {
+          ...item,
+          leit_urb: urb,
+          leit_rural: rural,
+          leit_povoado: povoado,
+          leit_total: total,
+          impedimentos: impedimentos,
+          indicador: indicador
+        };
+      });
+
+      setResults(processedData);
       setHasGenerated(true);
     } catch (err: any) {
       console.error('Erro na consulta:', err);
@@ -160,12 +184,23 @@ export default function ControleLeiturista() {
   };
 
   // 3. Totals
-  const totals = results.reduce((acc, curr) => ({
-    urb: acc.urb + (curr.leit_urb || 0),
-    povoado: acc.povoado + (curr.leit_povoado || 0),
-    rural: acc.rural + (curr.leit_rural || 0),
-    impedimentos: acc.impedimentos + (curr.impedimentos || 0)
-  }), { urb: 0, povoado: 0, rural: 0, impedimentos: 0 });
+  const totals = results.reduce((acc, curr) => {
+    const urb = Number(curr.leit_urb || 0);
+    const povoado = Number(curr.leit_povoado || 0);
+    const rural = Number(curr.leit_rural || 0);
+    const impedimentos = Number(curr.impedimentos || 0);
+    const total = Number(curr.leit_total || 0);
+
+    return {
+      urb: acc.urb + urb,
+      povoado: acc.povoado + povoado,
+      rural: acc.rural + rural,
+      impedimentos: acc.impedimentos + impedimentos,
+      total: acc.total + total
+    };
+  }, { urb: 0, povoado: 0, rural: 0, impedimentos: 0, total: 0 });
+
+  const totalIndicador = totals.total > 0 ? (totals.impedimentos / totals.total) * 100 : 0;
 
   // 4. Pagination
   const totalPages = Math.ceil(results.length / pageSize);
@@ -180,11 +215,18 @@ export default function ControleLeiturista() {
       "ANO", "MES", "RAZAO", "UL.", "MATR", "Leit. Urb", 
       "Leit. Povoado", "Leit. Rural", "Leit. Total", "IMPEDIMENTOS", "INDICADOR"
     ];
-    const tableRows = results.map(r => [
-      r.ano, r.mes, r.razao, r.ul, r.matr, r.leit_urb,
-      r.leit_povoado, r.leit_rural, r.leit_total, r.impedimentos, 
-      `${(r.indicador * 100).toFixed(2).replace('.', ',')}%`
-    ]);
+    const tableRows = [
+      ...results.map(r => [
+        r.ano, r.mes, r.razao, r.ul, r.matr, r.leit_urb,
+        r.leit_povoado, r.leit_rural, r.leit_total, r.impedimentos, 
+        `${(r.indicador).toFixed(2).replace('.', ',')}%`
+      ]),
+      [
+        "TOTAL", "", "", "", "", totals.urb,
+        totals.povoado, totals.rural, totals.total, totals.impedimentos,
+        `${totalIndicador.toFixed(2).replace('.', ',')}%`
+      ]
+    ];
 
     doc.setFontSize(18);
     doc.setTextColor(15, 23, 42);
@@ -220,19 +262,36 @@ export default function ControleLeiturista() {
   };
 
   const exportToExcel = () => {
-    const worksheet = XLSX.utils.json_to_sheet(results.map(r => ({
-      "ANO": r.ano,
-      "MES": r.mes,
-      "RAZAO": r.razao,
-      "UL.": r.ul,
-      "MATR": r.matr,
-      "Leit. Urb": r.leit_urb,
-      "Leit. Povoado": r.leit_povoado,
-      "Leit. Rural": r.leit_rural,
-      "Leit. Total": r.leit_total,
-      "IMPEDIMENTOS": r.impedimentos,
-      "INDICADOR": `${(r.indicador * 100).toFixed(2).replace('.', ',')}%`
-    })));
+    const exportData = [
+      ...results.map(r => ({
+        "ANO": r.ano,
+        "MES": r.mes,
+        "RAZAO": r.razao,
+        "UL.": r.ul,
+        "MATR": r.matr,
+        "Leit. Urb": r.leit_urb,
+        "Leit. Povoado": r.leit_povoado,
+        "Leit. Rural": r.leit_rural,
+        "Leit. Total": r.leit_total,
+        "IMPEDIMENTOS": r.impedimentos,
+        "INDICADOR": `${(r.indicador).toFixed(2).replace('.', ',')}%`
+      })),
+      {
+        "ANO": "TOTAL",
+        "MES": "",
+        "RAZAO": "",
+        "UL.": "",
+        "MATR": "",
+        "Leit. Urb": totals.urb,
+        "Leit. Povoado": totals.povoado,
+        "Leit. Rural": totals.rural,
+        "Leit. Total": totals.total,
+        "IMPEDIMENTOS": totals.impedimentos,
+        "INDICADOR": `${totalIndicador.toFixed(2).replace('.', ',')}%`
+      }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Leituristas");
     
@@ -426,7 +485,7 @@ export default function ControleLeiturista() {
                     <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Leit. Rural</th>
                     <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Leit. Total</th>
                     <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Impedimentos</th>
-                    <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Indicador</th>
+                    <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Indicador (%)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
@@ -442,9 +501,19 @@ export default function ControleLeiturista() {
                       <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.leit_rural}</td>
                       <td className="px-4 py-3 text-xs font-bold text-zinc-900">{r.leit_total}</td>
                       <td className="px-4 py-3 text-xs font-black text-red-600">{r.impedimentos}</td>
-                      <td className="px-4 py-3 text-xs font-bold text-zinc-900">{(r.indicador * 100).toFixed(2).replace('.', ',')}%</td>
+                      <td className="px-4 py-3 text-xs font-bold text-zinc-900">{(r.indicador).toFixed(2).replace('.', ',')}%</td>
                     </tr>
                   ))}
+                  {/* Total Row */}
+                  <tr className="bg-zinc-100/50 font-black">
+                    <td className="px-4 py-3 text-xs text-zinc-900" colSpan={5}>TOTAL GERAL</td>
+                    <td className="px-4 py-3 text-xs text-zinc-900">{totals.urb}</td>
+                    <td className="px-4 py-3 text-xs text-zinc-900">{totals.povoado}</td>
+                    <td className="px-4 py-3 text-xs text-zinc-900">{totals.rural}</td>
+                    <td className="px-4 py-3 text-xs text-zinc-900">{totals.total}</td>
+                    <td className="px-4 py-3 text-xs text-red-600">{totals.impedimentos}</td>
+                    <td className="px-4 py-3 text-xs text-zinc-900">{totalIndicador.toFixed(2).replace('.', ',')}%</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
