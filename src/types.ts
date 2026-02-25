@@ -26,9 +26,13 @@ export interface Horario {
   horas_trabalhadas?: number;
 }
 
-export interface DashboardStats {
-  totalLeituras: number;
-  leiturasConcluidas: number;
-  leiturasPendentes: number;
-  eficienciaMedia: number;
+export interface DashboardResumo {
+  leituras_a_realizar: number;
+  leituras_nao_realizadas: number;
+  leituras_realizadas: number;
+  percentual_impedimento: number;
+}
+
+export interface DashboardLeituraTipo extends DashboardResumo {
+  tipo: string;
 }
