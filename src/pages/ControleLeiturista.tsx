@@ -83,16 +83,16 @@ export default function ControleLeiturista() {
         key: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Configurada' : 'MISSING'
       });
 
-      // Optimized fetch for matriculas to avoid timeout
+      // Simple fetch for matriculas with ordering as requested
       const { data, error } = await supabase
         .from('"LeituraGeral"')
         .select('matr')
-        .limit(10000);
+        .order('matr', { ascending: true });
       
       if (error) throw error;
       
-      // Use Set for unique values in JS to avoid slow DISTINCT in DB
-      matriculas = [...new Set((data || []).map(item => item.matr))].sort();
+      // Use Set for unique values in JS to ensure distinctness and performance
+      matriculas = [...new Set((data || []).map(item => item.matr))];
     } catch (e) {
       console.error('Erro ao buscar matrículas:', e);
     }
@@ -144,36 +144,8 @@ export default function ControleLeiturista() {
         return;
       }
 
-      // Normalization and Manual Summation Logic
-      const processedData = data.map((item: any) => {
-        const tipo = String(item.tipo || '').trim().toLowerCase();
-        let urb = Number(item.leit_urb || 0);
-        let rural = Number(item.leit_rural || 0);
-        let povoado = Number(item.leit_povoado || 0);
-
-        // If values are zero, check tipo for manual assignment
-        if (urb === 0 && rural === 0 && povoado === 0 && item.tipo) {
-          if (tipo === 'urbano') urb = 1;
-          else if (tipo === 'rural') rural = 1;
-          else if (tipo === 'povoado') povoado = 1;
-        }
-
-        const total = urb + rural + povoado;
-        const impedimentos = Number(item.impedimentos || 0);
-        const indicador = total > 0 ? (impedimentos / total) * 100 : 0;
-
-        return {
-          ...item,
-          leit_urb: urb,
-          leit_rural: rural,
-          leit_povoado: povoado,
-          leit_total: total,
-          impedimentos: impedimentos,
-          indicador: indicador
-        };
-      });
-
-      setResults(processedData);
+      // Use RPC fields directly as requested
+      setResults(data || []);
       setHasGenerated(true);
     } catch (err: any) {
       console.error('Erro na consulta:', err);
