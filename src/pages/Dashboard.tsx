@@ -62,35 +62,61 @@ export default function Dashboard() {
   });
   const [loadingChart, setLoadingChart] = useState(false);
 
-  // 1. Fetch Filter Options with Retry Logic
+  // 1. Fetch Filter Options with Sequential Loading, Caching, and Retry Logic
   const fetchFilterOptions = useCallback(async (retryCount = 0) => {
+    // Try to load from cache first
+    const cachedFilters = localStorage.getItem('sal_dashboard_filters');
+    if (cachedFilters && !retryCount) {
+      try {
+        const parsed = JSON.parse(cachedFilters);
+        setOptions(parsed);
+        if (parsed.anos.length > 0 && ano === null) setAno(Number(parsed.anos[0]));
+        if (parsed.meses.length > 0 && mes === null) setMes(String(parsed.meses[0]));
+        setLoadingFilters(false);
+      } catch (e) {
+        console.error('Erro ao carregar cache de filtros:', e);
+      }
+    }
+
     setLoadingFilters(true);
     try {
-      const [anosRes, mesesRes, razoesRes] = await Promise.all([
-        supabase.rpc('dashboard_getanos'),
-        supabase.rpc('dashboard_getmeses'),
-        supabase.rpc('dashboard_getrazoes')
-      ]);
-      
+      // Sequential loading to avoid timeouts
+      const anosRes = await supabase.rpc('dashboard_getanos');
       if (anosRes.error) throw anosRes.error;
+      
+      const mesesRes = await supabase.rpc('dashboard_getmeses');
       if (mesesRes.error) throw mesesRes.error;
+      
+      const razoesRes = await supabase.rpc('dashboard_getrazoes');
       if (razoesRes.error) throw razoesRes.error;
 
       const anos = (anosRes.data as any[] || []).map(item => typeof item === 'object' ? item.ano : item).sort((a, b) => b - a);
       const meses = (mesesRes.data as any[] || []).map(item => typeof item === 'object' ? item.mes : item);
       const razoes = (razoesRes.data as any[] || []).map(item => typeof item === 'object' ? item.rz : item).sort((a, b) => a - b);
 
-      setOptions({ anos, meses, razoes });
+      const newOptions = { anos, meses, razoes };
+      setOptions(newOptions);
+      
+      // Save to cache
+      localStorage.setItem('sal_dashboard_filters', JSON.stringify(newOptions));
 
       if (anos.length > 0 && ano === null) setAno(Number(anos[0]));
       if (meses.length > 0 && mes === null) setMes(String(meses[0]));
     } catch (error: any) {
-      // Silent retry for fetch errors
-      if (error.message?.includes('Failed to fetch') && retryCount < 2) {
-        setTimeout(() => fetchFilterOptions(retryCount + 1), 1500);
+      // Silent retry for timeouts (57014) or fetch errors
+      const isTimeout = error.code === '57014' || error.message?.includes('Failed to fetch');
+      if (isTimeout && retryCount < 2) {
+        setTimeout(() => fetchFilterOptions(retryCount + 1), 2000);
         return;
       }
       console.error('Erro ao buscar opções de filtros:', error);
+      
+      // If everything fails and no cache, set some defaults to prevent crash
+      if (!localStorage.getItem('sal_dashboard_filters')) {
+        const currentYear = new Date().getFullYear();
+        setOptions(prev => ({ ...prev, anos: [currentYear] }));
+        setAno(currentYear);
+      }
     } finally {
       setLoadingFilters(false);
     }
@@ -288,10 +314,20 @@ export default function Dashboard() {
             <span className="text-xs font-bold uppercase tracking-widest">Filtros</span>
           </div>
           
-          {loadingFilters ? (
-            <div className="flex items-center gap-3 px-4 py-2 bg-zinc-50 rounded-xl">
-              <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
-              <span className="text-xs font-medium text-zinc-500">Sincronizando base...</span>
+          {loadingFilters && options.anos.length === 0 ? (
+            <div className="flex items-center gap-4">
+              <div className="flex flex-col gap-1">
+                <div className="h-3 w-8 bg-zinc-100 animate-pulse rounded ml-1" />
+                <div className="h-9 w-24 bg-zinc-100 animate-pulse rounded-xl" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className="h-3 w-8 bg-zinc-100 animate-pulse rounded ml-1" />
+                <div className="h-9 w-32 bg-zinc-100 animate-pulse rounded-xl" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className="h-3 w-8 bg-zinc-100 animate-pulse rounded ml-1" />
+                <div className="h-9 w-40 bg-zinc-100 animate-pulse rounded-xl" />
+              </div>
             </div>
           ) : (
             <>

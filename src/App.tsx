@@ -11,6 +11,7 @@ import {
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Consulta from './pages/Consulta';
+import ControleLeiturista from './pages/ControleLeiturista';
 import PlaceholderPage from './pages/Placeholder';
 
 export default function App() {
@@ -20,16 +21,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/consulta" element={<Consulta />} />
-          <Route 
-            path="/leituristas" 
-            element={
-              <PlaceholderPage 
-                title="Controle de Leituristas" 
-                icon={Users} 
-                description="Gerencie o cadastro de profissionais, atribuição de setores e acompanhamento de status em tempo real."
-              />
-            } 
-          />
+          <Route path="/leiturista" element={<ControleLeiturista />} />
           <Route 
             path="/evidencias" 
             element={

@@ -75,6 +75,8 @@ export default function Consulta() {
 
   const exportToPDF = () => {
     const doc = new jsPDF('l', 'mm', 'a4');
+    const timestamp = new Date().toLocaleString('pt-BR');
+    
     const tableColumn = [
       "Mês", "Ano", "UL", "Instalação", "Medidor", "Reg", 
       "Matr", "Cod", "Leitura", "Consumo", "Dig", "NOSB.IMP", "NOSB.SIM", "CNA"
@@ -84,17 +86,48 @@ export default function Consulta() {
       r.matr, r.cod, r.leitura, r.consumo, r.dig, r.nosb_imp, r.nosb_sim, r.cna
     ]);
 
+    // Header
+    doc.setFontSize(18);
+    doc.setTextColor(15, 23, 42); // slate-900
+    doc.text("SAL - Relatório de Consulta", 14, 15);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(100);
+    doc.text(`Gerado em: ${timestamp}`, 14, 22);
+
     autoTable(doc, {
       head: [tableColumn],
       body: tableRows,
-      startY: 20,
+      startY: 28,
       theme: 'grid',
-      styles: { fontSize: 7 },
-      headStyles: { fillColor: [16, 185, 129] }
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { 
+        fillColor: [30, 41, 59], // slate-800
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      columnStyles: {
+        7: { fontStyle: 'bold', textColor: [220, 38, 38] }, // COD column
+        9: { fontStyle: 'bold', textColor: [37, 99, 235] }  // Consumo column
+      }
     });
 
-    doc.text("Relatório de Consulta de Leituras", 14, 15);
-    doc.save(`consulta_leituras_${new Date().getTime()}.pdf`);
+    // Footer
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(
+        `Copyright SAL: Sistema de Análise de Leitura © 2026 | Página ${i} de ${pageCount}`,
+        doc.internal.pageSize.getWidth() / 2,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: 'center' }
+      );
+    }
+
+    doc.save(`SAL_Consulta_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`);
   };
 
   const exportToExcel = () => {
@@ -116,7 +149,12 @@ export default function Consulta() {
     })));
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Leituras");
-    XLSX.writeFile(workbook, `consulta_leituras_${new Date().getTime()}.xlsx`);
+    
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('pt-BR').replace(/\//g, '-');
+    const timeStr = now.toLocaleTimeString('pt-BR').replace(/:/g, '-');
+    
+    XLSX.writeFile(workbook, `SAL_Consulta_${dateStr}_${timeStr}.xlsx`);
   };
 
   // Calculate COD History
@@ -384,7 +422,7 @@ export default function Consulta() {
           <div className="w-20 h-20 bg-zinc-50 rounded-3xl flex items-center justify-center text-zinc-300 mb-2">
             <Search className="w-10 h-10" />
           </div>
-          <h2 className="text-xl font-bold text-zinc-900">Pronto para Pesquisar?</h2>
+          <h2 className="text-xl font-bold text-zinc-900">Aguardando novos parâmetros de busca</h2>
           <p className="text-zinc-500 max-w-xs">Utilize os filtros acima para pesquisar por uma instalação ou medidor específico.</p>
         </div>
       )}

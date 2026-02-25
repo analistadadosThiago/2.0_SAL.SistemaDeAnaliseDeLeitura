@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   Search, 
-  BarChart3,
+  Activity,
+  Users,
   Menu,
   X
 } from 'lucide-react';
@@ -12,6 +13,7 @@ import { cn } from '../lib/utils';
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
   { icon: Search, label: 'Consulta', path: '/consulta' },
+  { icon: Users, label: 'Controle de Leiturista', path: '/leiturista' },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -46,16 +48,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="p-6 flex items-center gap-3 border-b border-slate-800">
           <div className="relative flex-shrink-0">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <BarChart3 className="text-white w-5 h-5" />
-            </div>
-            <div className="absolute -top-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center shadow-sm">
-              <Search className="text-blue-600 w-3 h-3" />
+              <Activity className="text-white w-5 h-5" />
             </div>
           </div>
           {isSidebarOpen && (
             <div className="flex flex-col min-w-0">
               <span className="font-black text-white text-xl tracking-tighter">SAL</span>
-              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate">Análise de Leitura</span>
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate">Sistema de Análise de Leitura</span>
             </div>
           )}
         </div>
@@ -107,12 +106,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {/* Footer */}
           <footer className="mt-12 py-8 border-t border-zinc-200 text-center space-y-2">
             <p className="text-sm font-medium text-zinc-500">
-              Copyright SAL: Sistema de Análise de Leitura © {new Date().getFullYear()} | Criado por <span className="text-zinc-900 font-bold">Thiago Marques Lopes</span>
+              Copyright SAL: Sistema de Análise de Leitura © 2026 | Criado por <span className="text-zinc-900 font-bold">Thiago Marques Lopes</span>
             </p>
             <div className="flex items-center justify-center gap-3 text-[11px] font-black text-zinc-400 uppercase tracking-[0.2em]">
-              <span className="bg-zinc-100 px-2 py-0.5 rounded">{formatDate(currentTime)}</span>
-              <span className="w-1 h-1 bg-zinc-300 rounded-full"></span>
-              <span className="bg-zinc-900 text-white px-2 py-0.5 rounded shadow-sm">{formatTime(currentTime)}</span>
+              <span className="bg-zinc-100 px-2 py-0.5 rounded">{formatDate(currentTime)} - {formatTime(currentTime)}</span>
             </div>
           </footer>
         </main>

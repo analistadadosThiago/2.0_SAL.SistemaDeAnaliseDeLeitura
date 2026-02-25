@@ -63,3 +63,17 @@ export interface ConsultaLeitura {
   nosb_sim: string;
   cna: string;
 }
+
+export interface ControleLeituristaData {
+  ano: number;
+  mes: string;
+  razao: number;
+  ul: string;
+  matr: string;
+  leit_urb: number;
+  leit_povoado: number;
+  leit_rural: number;
+  leit_total: number;
+  impedimentos: number;
+  indicador: number;
+}
