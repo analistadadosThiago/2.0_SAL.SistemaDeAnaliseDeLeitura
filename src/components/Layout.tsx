@@ -1,18 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   Search, 
-  Users, 
-  Camera, 
-  Printer, 
-  Clock, 
-  ListOrdered, 
-  LogOut,
+  BarChart3,
   Menu,
   X
 } from 'lucide-react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../lib/utils';
 
 const menuItems = [
@@ -22,16 +16,26 @@ const menuItems = [
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const location = useLocation();
-  const navigate = useNavigate();
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/');
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('pt-BR');
+  };
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('pt-BR');
   };
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] flex">
+    <div className="min-h-screen bg-[#f8f9fa] flex flex-col lg:flex-row">
       {/* Sidebar */}
       <aside 
         className={cn(
@@ -40,70 +44,77 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         )}
       >
         <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-xs">GL</span>
+          <div className="relative flex-shrink-0">
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+              <BarChart3 className="text-white w-5 h-5" />
+            </div>
+            <div className="absolute -top-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center shadow-sm">
+              <Search className="text-blue-600 w-3 h-3" />
+            </div>
           </div>
-          {isSidebarOpen && <span className="font-bold text-white truncate">Gestão de Leitura</span>}
+          {isSidebarOpen && (
+            <div className="flex flex-col min-w-0">
+              <span className="font-black text-white text-xl tracking-tighter">SAL</span>
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate">Análise de Leitura</span>
+            </div>
+          )}
         </div>
 
-        <nav className="flex-1 py-4 overflow-y-auto">
+        <nav className="flex-1 py-6 overflow-y-auto">
           {menuItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}
               className={cn(
-                "flex items-center gap-3 px-6 py-3 transition-colors group relative",
+                "flex items-center gap-3 px-6 py-4 transition-all group relative",
                 location.pathname === item.path 
                   ? "text-white bg-blue-600/10" 
-                  : "text-slate-400 hover:text-white hover:bg-slate-800"
+                  : "text-slate-400 hover:text-white hover:bg-slate-800/50"
               )}
             >
-              <item.icon className={cn("w-5 h-5 flex-shrink-0", location.pathname === item.path ? "text-blue-500" : "group-hover:text-white")} />
-              {isSidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
+              <item.icon className={cn("w-5 h-5 flex-shrink-0 transition-transform group-hover:scale-110", location.pathname === item.path ? "text-blue-500" : "group-hover:text-white")} />
+              {isSidebarOpen && <span className="text-sm font-bold tracking-tight">{item.label}</span>}
               {location.pathname === item.path && (
-                <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500" />
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
               )}
             </Link>
           ))}
         </nav>
-
-        <div className="p-4 border-t border-slate-800">
-          <button
-            onClick={handleLogout}
-            className={cn(
-              "flex items-center gap-3 px-4 py-2 w-full rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-colors",
-              !isSidebarOpen && "justify-center"
-            )}
-          >
-            <LogOut className="w-5 h-5" />
-            {isSidebarOpen && <span className="text-sm font-medium">Sair</span>}
-          </button>
-        </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-6 sticky top-0 z-40">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        <header className="h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-6 sticky top-0 z-40 shadow-sm">
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-500"
+            className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-500 transition-colors"
           >
             {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium text-zinc-900">Administrador</p>
-              <p className="text-xs text-zinc-500">Gestor de Operações</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-600 font-bold">
-              AD
+          <div className="flex items-center gap-2">
+            <div className="px-3 py-1 bg-zinc-100 rounded-full">
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sistema Ativo</span>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 p-8 overflow-y-auto">
-          {children}
+        <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
+          <div className="max-w-[1600px] mx-auto min-h-[calc(100vh-180px)]">
+            {children}
+          </div>
+          
+          {/* Footer */}
+          <footer className="mt-12 py-8 border-t border-zinc-200 text-center space-y-2">
+            <p className="text-sm font-medium text-zinc-500">
+              Copyright SAL: Sistema de Análise de Leitura © {new Date().getFullYear()} | Criado por <span className="text-zinc-900 font-bold">Thiago Marques Lopes</span>
+            </p>
+            <div className="flex items-center justify-center gap-3 text-[11px] font-black text-zinc-400 uppercase tracking-[0.2em]">
+              <span className="bg-zinc-100 px-2 py-0.5 rounded">{formatDate(currentTime)}</span>
+              <span className="w-1 h-1 bg-zinc-300 rounded-full"></span>
+              <span className="bg-zinc-900 text-white px-2 py-0.5 rounded shadow-sm">{formatTime(currentTime)}</span>
+            </div>
+          </footer>
         </main>
       </div>
     </div>
