@@ -1,13 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-} from 'recharts';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import Chart from 'react-apexcharts';
 import { 
   CheckCircle2, 
   Clock, 
@@ -15,41 +7,114 @@ import {
   TrendingUp,
   Calendar,
   Filter,
-  Loader2
+  Loader2,
+  RefreshCw,
+  FileText,
+  BarChart3,
+  PieChart as PieChartIcon,
+  ChevronRight
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { DashboardResumo, DashboardLeituraTipo } from '../types';
+import { DashboardResumo, DashboardLeituraTipo, DashboardFiltros } from '../types';
 
-const MONTHS = [
+const MONTHS_LIST = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ];
 
-const YEARS = [2023, 2024, 2025, 2026];
-
 export default function Dashboard() {
-  const [loading, setLoading] = useState(true);
-  const [ano, setAno] = useState<number>(new Date().getFullYear());
-  const [mes, setMes] = useState<string>(MONTHS[new Date().getMonth()]);
+  const [loading, setLoading] = useState(false);
+  const [loadingFilters, setLoadingFilters] = useState(true);
+  const [hasGenerated, setHasGenerated] = useState(false);
+  
+  // Filter Options
+  const [options, setOptions] = useState<{
+    anos: number[];
+    meses: string[];
+    razoes: number[];
+  }>({
+    anos: [],
+    meses: [],
+    razoes: []
+  });
+
+  // Selected Filters
+  const [ano, setAno] = useState<number | null>(null);
+  const [mes, setMes] = useState<string | null>(null);
   const [rz, setRz] = useState<number | null>(null);
   
+  // Data State
   const [resumo, setResumo] = useState<DashboardResumo | null>(null);
   const [leiturasPorTipo, setLeiturasPorTipo] = useState<DashboardLeituraTipo[]>([]);
+  
+  // Chart Tabs State
+  const [activeTab, setActiveTab] = useState<'razao' | 'mes' | 'ano'>('razao');
+  const [chartData, setChartData] = useState<{
+    razao: { x: string, y: number }[];
+    mes: { x: string, y: number }[];
+    ano: { x: string, y: number }[];
+  }>({
+    razao: [],
+    mes: [],
+    ano: []
+  });
+  const [loadingChart, setLoadingChart] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  // 1. Fetch Filter Options with Retry Logic
+  const fetchFilterOptions = useCallback(async (retryCount = 0) => {
+    setLoadingFilters(true);
+    try {
+      const [anosRes, mesesRes, razoesRes] = await Promise.all([
+        supabase.rpc('dashboard_getanos'),
+        supabase.rpc('dashboard_getmeses'),
+        supabase.rpc('dashboard_getrazoes')
+      ]);
+      
+      if (anosRes.error) throw anosRes.error;
+      if (mesesRes.error) throw mesesRes.error;
+      if (razoesRes.error) throw razoesRes.error;
+
+      const anos = (anosRes.data as any[] || []).map(item => typeof item === 'object' ? item.ano : item).sort((a, b) => b - a);
+      const meses = (mesesRes.data as any[] || []).map(item => typeof item === 'object' ? item.mes : item);
+      const razoes = (razoesRes.data as any[] || []).map(item => typeof item === 'object' ? item.rz : item).sort((a, b) => a - b);
+
+      setOptions({ anos, meses, razoes });
+
+      if (anos.length > 0 && ano === null) setAno(Number(anos[0]));
+      if (meses.length > 0 && mes === null) setMes(String(meses[0]));
+    } catch (error: any) {
+      // Silent retry for fetch errors
+      if (error.message?.includes('Failed to fetch') && retryCount < 2) {
+        setTimeout(() => fetchFilterOptions(retryCount + 1), 1500);
+        return;
+      }
+      console.error('Erro ao buscar opções de filtros:', error);
+    } finally {
+      setLoadingFilters(false);
+    }
+  }, [ano, mes]);
+
+  // 2. Fetch Dashboard Data (Triggered by Button)
+  const handleGenerateReport = async () => {
+    if (ano === null || mes === null) return;
+    
     setLoading(true);
+    setLoadingChart(true);
+    setResumo(null); // Reset previous data
+    setLeiturasPorTipo([]); // Reset previous data
+    
     try {
       const params = {
-        p_ano: ano,
-        p_mes: mes,
-        p_rz: rz
+        p_ano: Number(ano),
+        p_mes: String(mes),
+        p_rz: rz !== null ? Number(rz) : null
       };
 
       const [resumoRes, tipoRes] = await Promise.all([
-        supabase.rpc('Dashboard_ResumoGeral', params),
-        supabase.rpc('Dashboard_LeiturasPorTipo', params)
+        supabase.rpc('dashboard_resumogeral', params),
+        supabase.rpc('dashboard_leiturasportipo', params)
       ]);
 
       if (resumoRes.error) throw resumoRes.error;
@@ -57,164 +122,388 @@ export default function Dashboard() {
 
       setResumo(resumoRes.data?.[0] || null);
       setLeiturasPorTipo(tipoRes.data || []);
+      setHasGenerated(true);
+
+      // Fetch Chart Data based on active tab
+      await updateChartData(activeTab, Number(ano), String(mes), rz);
+      
     } catch (error) {
-      console.error('Erro ao buscar dados do dashboard:', error);
+      console.error('Erro ao gerar relatório:', error);
     } finally {
       setLoading(false);
+      setLoadingChart(false);
     }
-  }, [ano, mes, rz]);
+  };
+
+  const updateChartData = async (tab: 'razao' | 'mes' | 'ano', currentAno: number, currentMes: string, currentRz: number | null) => {
+    setLoadingChart(true);
+    try {
+      let results: (DashboardResumo & { label: string })[] = [];
+
+      if (tab === 'razao') {
+        const rawResults = await Promise.all(
+          options.razoes.map(async (r) => {
+            const { data } = await supabase.rpc('dashboard_resumogeral', {
+              p_ano: currentAno,
+              p_mes: currentMes,
+              p_rz: r
+            });
+            const res = data?.[0] || { leituras_nao_realizadas: 0, leituras_realizadas: 0, percentual_impedimento: 0, leituras_a_realizar: 0 };
+            return { ...res, label: `RZ ${r}` };
+          })
+        );
+        results = rawResults;
+      } else if (tab === 'mes') {
+        const rawResults = await Promise.all(
+          MONTHS_LIST.map(async (m) => {
+            const { data } = await supabase.rpc('dashboard_resumogeral', {
+              p_ano: currentAno,
+              p_mes: m,
+              p_rz: currentRz
+            });
+            const res = data?.[0] || { leituras_nao_realizadas: 0, leituras_realizadas: 0, percentual_impedimento: 0, leituras_a_realizar: 0 };
+            return { ...res, label: m };
+          })
+        );
+        results = rawResults;
+      } else if (tab === 'ano') {
+        const rawResults = await Promise.all(
+          options.anos.map(async (y) => {
+            const { data } = await supabase.rpc('dashboard_resumogeral', {
+              p_ano: y,
+              p_mes: currentMes,
+              p_rz: currentRz
+            });
+            const res = data?.[0] || { leituras_nao_realizadas: 0, leituras_realizadas: 0, percentual_impedimento: 0, leituras_a_realizar: 0 };
+            return { ...res, label: y.toString() };
+          })
+        );
+        results = rawResults.reverse();
+      }
+
+      // Sort descending by impediments
+      const sortedResults = [...results].sort((a, b) => b.leituras_nao_realizadas - a.leituras_nao_realizadas);
+      setChartData(prev => ({ ...prev, [tab]: sortedResults }));
+    } catch (error) {
+      console.error('Erro ao atualizar dados do gráfico:', error);
+    } finally {
+      setLoadingChart(false);
+    }
+  };
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchFilterOptions();
+  }, [fetchFilterOptions]);
+
+  // Update chart when tab changes (if already generated)
+  useEffect(() => {
+    if (hasGenerated && ano && mes) {
+      updateChartData(activeTab, ano, mes, rz);
+    }
+  }, [activeTab]);
+
+  const chartOptions: ApexCharts.ApexOptions = {
+    chart: {
+      type: 'bar',
+      toolbar: { show: false },
+      fontFamily: 'Inter, sans-serif',
+      animations: { enabled: true, speed: 800 }
+    },
+    plotOptions: {
+      bar: {
+        borderRadius: 8,
+        columnWidth: '50%',
+        distributed: true,
+        dataLabels: { position: 'top' }
+      }
+    },
+    dataLabels: {
+      enabled: true,
+      formatter: (val) => val.toString(),
+      offsetY: -25,
+      style: {
+        fontSize: '12px',
+        fontWeight: 'bold',
+        colors: ['#3f3f46']
+      }
+    },
+    colors: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'],
+    xaxis: {
+      categories: chartData[activeTab].map(d => d.label),
+      axisBorder: { show: false },
+      axisTicks: { show: false },
+      labels: { style: { colors: '#71717a', fontWeight: 500 } }
+    },
+    yaxis: {
+      show: false, // Hide Y axis as requested (equivalent to scales.y.display = false)
+      labels: { show: false }
+    },
+    grid: {
+      show: false, // Remove background grid lines
+    },
+    legend: { show: false },
+    tooltip: {
+      custom: function({ series, seriesIndex, dataPointIndex, w }) {
+        const raw = chartData[activeTab][dataPointIndex];
+        return `
+          <div class="p-4 bg-white border border-zinc-100 shadow-2xl rounded-2xl min-w-[180px]">
+            <div class="font-black text-zinc-900 mb-3 border-b border-zinc-50 pb-2 uppercase tracking-wider text-[10px]">${raw.label}</div>
+            <div class="space-y-2">
+              <div class="flex justify-between items-center gap-4">
+                <span class="text-[10px] font-bold text-zinc-400 uppercase">Realizadas</span>
+                <span class="text-sm font-black text-emerald-600">${raw.leituras_realizadas.toLocaleString()}</span>
+              </div>
+              <div class="flex justify-between items-center gap-4">
+                <span class="text-[10px] font-bold text-zinc-400 uppercase">Não Realizadas</span>
+                <span class="text-sm font-black text-amber-600">${raw.leituras_nao_realizadas.toLocaleString()}</span>
+              </div>
+              <div class="flex justify-between items-center gap-4 pt-2 border-t border-zinc-50">
+                <span class="text-[10px] font-bold text-zinc-400 uppercase">% Impedimento</span>
+                <span class="text-sm font-black text-red-600">${raw.percentual_impedimento.toFixed(2).replace('.', ',')}%</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+  };
+
+  const chartSeries = [{
+    name: 'Impedimentos',
+    data: chartData[activeTab].map(d => d.leituras_nao_realizadas)
+  }];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <div className="space-y-8 pb-12">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Dashboard de Medições</h1>
-          <p className="text-zinc-500 text-sm">Acompanhamento de desempenho integrado ao Supabase.</p>
+          <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">Dashboard de Medições</h1>
+          <p className="text-zinc-500 text-sm mt-1">Gestão de performance e análise de impedimentos em campo.</p>
         </div>
         
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xl border border-zinc-200 shadow-sm">
-          <div className="flex items-center gap-2 text-zinc-400 mr-2">
+        {/* Filters Section */}
+        <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
+          <div className="flex items-center gap-2 text-zinc-400 px-2">
             <Filter className="w-4 h-4" />
-            <span className="text-xs font-bold uppercase tracking-wider">Filtros</span>
+            <span className="text-xs font-bold uppercase tracking-widest">Filtros</span>
           </div>
           
-          <select 
-            value={ano} 
-            onChange={(e) => setAno(Number(e.target.value))}
-            className="text-sm border-none focus:ring-0 bg-zinc-50 rounded-lg px-3 py-1.5 font-medium text-zinc-700"
-          >
-            {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
+          {loadingFilters ? (
+            <div className="flex items-center gap-3 px-4 py-2 bg-zinc-50 rounded-xl">
+              <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+              <span className="text-xs font-medium text-zinc-500">Sincronizando base...</span>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Ano</span>
+                <select 
+                  value={ano || ''} 
+                  onChange={(e) => setAno(Number(e.target.value))}
+                  className="text-sm border-zinc-200 focus:ring-emerald-500 focus:border-emerald-500 bg-zinc-50 rounded-xl px-4 py-2 font-semibold text-zinc-700 transition-all"
+                >
+                  {options.anos.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
 
-          <select 
-            value={mes} 
-            onChange={(e) => setMes(e.target.value)}
-            className="text-sm border-none focus:ring-0 bg-zinc-50 rounded-lg px-3 py-1.5 font-medium text-zinc-700"
-          >
-            {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Mês</span>
+                <select 
+                  value={mes || ''} 
+                  onChange={(e) => setMes(e.target.value)}
+                  className="text-sm border-zinc-200 focus:ring-emerald-500 focus:border-emerald-500 bg-zinc-50 rounded-xl px-4 py-2 font-semibold text-zinc-700 transition-all"
+                >
+                  {options.meses.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
 
-          <input 
-            type="number" 
-            placeholder="Razão (RZ)"
-            value={rz || ''}
-            onChange={(e) => setRz(e.target.value ? Number(e.target.value) : null)}
-            className="text-sm border-none focus:ring-0 bg-zinc-50 rounded-lg px-3 py-1.5 font-medium text-zinc-700 w-28"
-          />
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Razão</span>
+                <select 
+                  value={rz || ''} 
+                  onChange={(e) => setRz(e.target.value ? Number(e.target.value) : null)}
+                  className="text-sm border-zinc-200 focus:ring-emerald-500 focus:border-emerald-500 bg-zinc-50 rounded-xl px-4 py-2 font-semibold text-zinc-700 min-w-[140px] transition-all"
+                >
+                  <option value="">Todas Razões</option>
+                  {options.razoes.map(r => <option key={r} value={r}>RZ {r}</option>)}
+                </select>
+              </div>
+            </>
+          )}
 
           <button 
-            onClick={fetchData}
-            disabled={loading}
-            className="p-1.5 hover:bg-zinc-100 rounded-lg transition-colors text-zinc-400 disabled:opacity-50"
+            onClick={handleGenerateReport}
+            disabled={loading || loadingFilters}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3 rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-emerald-100 active:scale-95 disabled:opacity-50 disabled:shadow-none mt-auto h-[46px]"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />}
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
+            <span>Gerar Relatório</span>
           </button>
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard 
-          title="Leituras a Realizar" 
-          value={resumo?.leituras_a_realizar?.toLocaleString() || '0'} 
-          icon={Calendar} 
-          color="blue" 
-        />
-        <StatCard 
-          title="Leituras Realizadas" 
-          value={resumo?.leituras_realizadas?.toLocaleString() || '0'} 
-          icon={CheckCircle2} 
-          color="emerald" 
-        />
-        <StatCard 
-          title="Não Realizadas" 
-          value={resumo?.leituras_nao_realizadas?.toLocaleString() || '0'} 
-          icon={Clock} 
-          color="amber" 
-        />
-        <StatCard 
-          title="Impedimento (%)" 
-          value={resumo?.percentual_impedimento ? `${resumo.percentual_impedimento.toFixed(2).replace('.', ',')}%` : '0,00%'} 
-          icon={AlertCircle} 
-          color="red" 
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart by Type */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
-          <h3 className="text-lg font-semibold text-zinc-900 mb-6 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-emerald-500" />
-            Leituras por Tipo
-          </h3>
-          <div className="h-[350px] w-full">
-            {loading ? (
-              <div className="h-full flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-zinc-300" />
-              </div>
-            ) : leiturasPorTipo.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={leiturasPorTipo}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f1f1" />
-                  <XAxis dataKey="tipo" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#71717a' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#71717a' }} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                    formatter={(value: any) => [value.toLocaleString(), 'Total']}
-                  />
-                  <Bar dataKey="leituras_realizadas" name="Realizadas" fill="#10b981" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="leituras_nao_realizadas" name="Não Realizadas" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-zinc-400">
-                <Filter className="w-12 h-12 mb-2 opacity-20" />
-                <p>Nenhum dado encontrado para este período.</p>
-              </div>
-            )}
+      {!hasGenerated ? (
+        <div className="h-[60vh] flex flex-col items-center justify-center text-center space-y-4 bg-white rounded-[32px] border border-zinc-100 shadow-sm">
+          <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center text-emerald-500 mb-2">
+            <BarChart3 className="w-10 h-10" />
           </div>
+          <h2 className="text-2xl font-bold text-zinc-900">Pronto para Analisar?</h2>
+          <p className="text-zinc-500 max-w-md">Selecione os filtros acima e clique em <span className="font-bold text-emerald-600">Gerar Relatório</span> para carregar os dados de medição.</p>
         </div>
-
-        {/* Breakdown List */}
-        <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm flex flex-col">
-          <h3 className="text-lg font-semibold text-zinc-900 mb-6">Resumo por Tipo</h3>
-          <div className="flex-1 space-y-4 overflow-y-auto pr-2">
-            {leiturasPorTipo.map((item, idx) => (
-              <div key={idx} className="p-4 rounded-xl bg-zinc-50 border border-zinc-100 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-zinc-900">{item.tipo}</span>
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-                    {item.percentual_impedimento.toFixed(2).replace('.', ',')}% Imp.
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="text-zinc-500">Realizadas: <span className="text-zinc-900 font-medium">{item.leituras_realizadas}</span></div>
-                  <div className="text-zinc-500">Não Realizadas: <span className="text-zinc-900 font-medium">{item.leituras_nao_realizadas}</span></div>
-                </div>
-                <div className="w-full bg-zinc-200 h-1.5 rounded-full overflow-hidden mt-2">
-                  <div 
-                    className="bg-emerald-500 h-full" 
-                    style={{ width: `${(item.leituras_realizadas / (item.leituras_a_realizar || 1)) * 100}%` }} 
-                  />
-                </div>
-              </div>
-            ))}
-            {!loading && leiturasPorTipo.length === 0 && (
-              <p className="text-center text-zinc-400 text-sm py-12">Sem dados para exibir.</p>
-            )}
+      ) : (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-8"
+        >
+          {/* Main Stats Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatCard 
+              title="A Realizar" 
+              value={resumo?.leituras_a_realizar?.toLocaleString() ?? '0'} 
+              icon={Calendar} 
+              color="blue" 
+              loading={loading}
+            />
+            <StatCard 
+              title="Realizadas" 
+              value={resumo?.leituras_realizadas?.toLocaleString() ?? '0'} 
+              icon={CheckCircle2} 
+              color="emerald" 
+              loading={loading}
+            />
+            <StatCard 
+              title="Não Realizadas" 
+              value={resumo?.leituras_nao_realizadas?.toLocaleString() ?? '0'} 
+              icon={Clock} 
+              color="amber" 
+              loading={loading}
+            />
+            <StatCard 
+              title="Impedimento" 
+              value={resumo?.percentual_impedimento !== undefined ? `${resumo.percentual_impedimento.toFixed(2).replace('.', ',')}%` : '0,00%'} 
+              icon={AlertCircle} 
+              color="red" 
+              loading={loading}
+              highlight
+            />
           </div>
-        </div>
-      </div>
+
+          {/* Type Breakdown Cards */}
+          {leiturasPorTipo.length > 0 && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between px-2">
+                <h3 className="text-xl font-bold text-zinc-900">Resumo por Tipo</h3>
+                <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Detalhamento Operacional</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {leiturasPorTipo.map((item, idx) => (
+                  <motion.div 
+                    key={idx}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: idx * 0.05 }}
+                    className="bg-white p-6 rounded-[28px] border border-zinc-100 shadow-sm hover:shadow-xl transition-all group"
+                  >
+                    <div className="flex justify-between items-start mb-6">
+                      <div className="space-y-1">
+                        <h4 className="font-black text-zinc-900 text-lg group-hover:text-emerald-600 transition-colors uppercase tracking-tight">{item?.tipo ?? 'N/A'}</h4>
+                        <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Categoria de Medição</p>
+                      </div>
+                      <div className="bg-red-50 text-red-600 px-3 py-1.5 rounded-xl text-xs font-black border border-red-100 shadow-sm">
+                        {(item?.percentual_impedimento ?? 0).toFixed(2).replace('.', ',')}% Imp.
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3 mb-6">
+                      <div className="bg-zinc-50 p-3 rounded-2xl text-center border border-zinc-100/50">
+                        <p className="text-[9px] font-bold text-zinc-400 uppercase mb-1">Total</p>
+                        <p className="text-sm font-black text-zinc-900">{(item?.total_leituras ?? 0).toLocaleString()}</p>
+                      </div>
+                      <div className="bg-emerald-50 p-3 rounded-2xl text-center border border-emerald-100/50">
+                        <p className="text-[9px] font-bold text-emerald-600 uppercase mb-1">Realizadas</p>
+                        <p className="text-sm font-black text-emerald-700">{(item?.realizadas ?? 0).toLocaleString()}</p>
+                      </div>
+                      <div className="bg-amber-50 p-3 rounded-2xl text-center border border-amber-100/50">
+                        <p className="text-[9px] font-bold text-amber-600 uppercase mb-1">Não Real.</p>
+                        <p className="text-sm font-black text-amber-700">{(item?.nao_realizadas ?? 0).toLocaleString()}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
+                        <span className="text-zinc-400">Eficiência Operacional</span>
+                        <span className="text-emerald-600">{(item?.realizadas !== undefined && item?.total_leituras) ? ((item.realizadas / item.total_leituras) * 100).toFixed(1) : '0.0'}%</span>
+                      </div>
+                      <div className="w-full bg-zinc-100 h-2.5 rounded-full overflow-hidden p-0.5">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(item?.realizadas !== undefined && item?.total_leituras) ? (item.realizadas / item.total_leituras) * 100 : 0}%` }}
+                          className="bg-emerald-500 h-full rounded-full shadow-[0_0_12px_rgba(16,185,129,0.4)]"
+                        />
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Impediments Chart Section */}
+          <div className="bg-white p-8 rounded-[32px] border border-zinc-100 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+              <div className="space-y-1">
+                <h3 className="text-2xl font-bold text-zinc-900">Análise de Impedimentos</h3>
+                <p className="text-zinc-500 text-sm">Distribuição ordenada de leituras não realizadas.</p>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex p-1.5 bg-zinc-100 rounded-2xl self-start">
+                {(['razao', 'mes', 'ano'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={cn(
+                      "px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
+                      activeTab === tab 
+                        ? "bg-white text-zinc-900 shadow-lg" 
+                        : "text-zinc-400 hover:text-zinc-600"
+                    )}
+                  >
+                    {tab === 'razao' ? 'Por Razão' : tab === 'mes' ? 'Por Mês' : 'Por Ano'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="h-[450px] w-full relative">
+              {loadingChart ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-10 rounded-2xl">
+                  <Loader2 className="w-12 h-12 animate-spin text-emerald-500 mb-4" />
+                  <p className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">Sincronizando Histórico...</p>
+                </div>
+              ) : chartData[activeTab].length > 0 ? (
+                <Chart 
+                  options={chartOptions}
+                  series={chartSeries}
+                  type="bar"
+                  height="100%"
+                />
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-zinc-400">
+                  <AlertCircle className="w-12 h-12 mb-2 opacity-20" />
+                  <p className="font-medium">Dados insuficientes para gerar este gráfico.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }
 
-function StatCard({ title, value, icon: Icon, color }: any) {
+function StatCard({ title, value, icon: Icon, color, loading, highlight }: any) {
   const colorClasses: any = {
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
     amber: "bg-amber-50 text-amber-600 border-amber-100",
@@ -224,16 +513,32 @@ function StatCard({ title, value, icon: Icon, color }: any) {
 
   return (
     <motion.div 
-      whileHover={{ y: -2 }}
-      className={cn("bg-white p-6 rounded-2xl border shadow-sm transition-all", colorClasses[color])}
+      whileHover={{ y: -4 }}
+      className={cn(
+        "bg-white p-8 rounded-[32px] border shadow-sm transition-all relative overflow-hidden group",
+        highlight ? "ring-2 ring-red-500/10" : "border-zinc-100"
+      )}
     >
-      <div className="flex items-center justify-between mb-4">
-        <div className={cn("p-2 rounded-lg bg-white shadow-sm")}>
-          <Icon className="w-5 h-5" />
+      <div className="flex items-center justify-between mb-6">
+        <div className={cn("p-3 rounded-2xl bg-white shadow-md group-hover:scale-110 transition-transform", colorClasses[color])}>
+          <Icon className="w-6 h-6" />
         </div>
+        {loading && <Loader2 className="w-5 h-5 animate-spin opacity-20" />}
       </div>
-      <h4 className="text-zinc-500 text-sm font-medium">{title}</h4>
-      <p className="text-2xl font-bold text-zinc-900 mt-1">{value}</p>
+      <h4 className="text-zinc-400 text-xs font-bold uppercase tracking-widest">{title}</h4>
+      {loading ? (
+        <div className="h-10 w-32 bg-zinc-100 animate-pulse rounded-xl mt-2" />
+      ) : (
+        <p className={cn(
+          "text-3xl font-black mt-2 tracking-tight",
+          highlight ? "text-red-600" : "text-zinc-900"
+        )}>
+          {value}
+        </p>
+      )}
+      
+      {/* Decorative background icon */}
+      <Icon className="absolute -right-4 -bottom-4 w-24 h-24 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity" />
     </motion.div>
   );
 }

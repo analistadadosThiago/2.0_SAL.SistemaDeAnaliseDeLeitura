@@ -33,6 +33,16 @@ export interface DashboardResumo {
   percentual_impedimento: number;
 }
 
-export interface DashboardLeituraTipo extends DashboardResumo {
+export interface DashboardLeituraTipo {
   tipo: string;
+  total_leituras: number;
+  realizadas: number;
+  nao_realizadas: number;
+  percentual_impedimento: number;
+}
+
+export interface DashboardFiltros {
+  ano: number;
+  mes: string;
+  rz: number;
 }
