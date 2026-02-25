@@ -277,8 +277,8 @@ export default function Dashboard() {
     <div className="space-y-8 pb-12">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">Dashboard de Medições</h1>
-          <p className="text-zinc-500 text-sm mt-1">Gestão de performance e análise de impedimentos em campo.</p>
+          <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">Dashboard</h1>
+          <p className="text-zinc-500 text-sm mt-1">Resultado Geral de performance e análise</p>
         </div>
         
         {/* Filters Section */}
@@ -394,7 +394,7 @@ export default function Dashboard() {
             <div className="space-y-6">
               <div className="flex items-center justify-between px-2">
                 <h3 className="text-xl font-bold text-zinc-900">Resumo por Tipo</h3>
-                <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Detalhamento Operacional</span>
+                <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Resultado por Tipo de Leitura</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {leiturasPorTipo.map((item, idx) => (
