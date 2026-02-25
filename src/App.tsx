@@ -9,7 +9,8 @@ import {
 } from 'lucide-react';
 
 import Layout from './components/Layout';
-import MainView from './pages/MainView';
+import Dashboard from './pages/Dashboard';
+import Consulta from './pages/Consulta';
 import PlaceholderPage from './pages/Placeholder';
 
 export default function App() {
@@ -17,7 +18,8 @@ export default function App() {
     <Router>
       <Layout>
         <Routes>
-          <Route path="/" element={<MainView />} />
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/consulta" element={<Consulta />} />
           <Route 
             path="/leituristas" 
             element={
