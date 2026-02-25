@@ -16,8 +16,7 @@ import { supabase } from '../lib/supabase';
 import { cn } from '../lib/utils';
 
 const menuItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: Search, label: 'Consulta', path: '/consulta' },
+  { icon: LayoutDashboard, label: 'Dashboard / Consulta', path: '/' },
   { icon: Users, label: 'Controle de Leiturista', path: '/leituristas' },
   { icon: Camera, label: 'Controle de Evidências', path: '/evidencias' },
   { icon: Printer, label: 'Controle de Impressão', path: '/impressao' },

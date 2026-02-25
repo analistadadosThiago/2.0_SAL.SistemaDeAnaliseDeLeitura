@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
+import MainView from './pages/MainView';
 import PlaceholderPage from './pages/Placeholder';
 
 export default function App() {
@@ -17,17 +17,7 @@ export default function App() {
     <Router>
       <Layout>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route 
-            path="/consulta" 
-            element={
-              <PlaceholderPage 
-                title="Consulta de Leituras" 
-                icon={Search} 
-                description="Módulo de pesquisa avançada por medidor, data ou leiturista. Em breve você poderá filtrar e visualizar detalhes de cada medição."
-              />
-            } 
-          />
+          <Route path="/" element={<MainView />} />
           <Route 
             path="/leituristas" 
             element={

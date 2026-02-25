@@ -154,8 +154,12 @@ export default function Dashboard() {
         );
         results = rawResults;
       } else if (tab === 'mes') {
+        // Aba Mês: Histórico de Janeiro até o mês selecionado
+        const selectedMonthIndex = MONTHS_LIST.indexOf(currentMes);
+        const monthsToFetch = selectedMonthIndex !== -1 ? MONTHS_LIST.slice(0, selectedMonthIndex + 1) : [currentMes];
+        
         const rawResults = await Promise.all(
-          MONTHS_LIST.map(async (m) => {
+          monthsToFetch.map(async (m) => {
             const { data } = await supabase.rpc('dashboard_resumogeral', {
               p_ano: currentAno,
               p_mes: m,
@@ -181,8 +185,8 @@ export default function Dashboard() {
         results = rawResults.reverse();
       }
 
-      // Sort descending by impediments
-      const sortedResults = [...results].sort((a, b) => b.leituras_nao_realizadas - a.leituras_nao_realizadas);
+      // Sort descending by impediments (leituras_nao_realizadas)
+      const sortedResults = [...results].sort((a, b) => (b.leituras_nao_realizadas || 0) - (a.leituras_nao_realizadas || 0));
       setChartData(prev => ({ ...prev, [tab]: sortedResults }));
     } catch (error) {
       console.error('Erro ao atualizar dados do gráfico:', error);
@@ -251,15 +255,11 @@ export default function Dashboard() {
             <div class="space-y-2">
               <div class="flex justify-between items-center gap-4">
                 <span class="text-[10px] font-bold text-zinc-400 uppercase">Realizadas</span>
-                <span class="text-sm font-black text-emerald-600">${raw.leituras_realizadas.toLocaleString()}</span>
-              </div>
-              <div class="flex justify-between items-center gap-4">
-                <span class="text-[10px] font-bold text-zinc-400 uppercase">Não Realizadas</span>
-                <span class="text-sm font-black text-amber-600">${raw.leituras_nao_realizadas.toLocaleString()}</span>
+                <span class="text-sm font-black text-emerald-600">${(raw.leituras_realizadas ?? 0).toLocaleString()}</span>
               </div>
               <div class="flex justify-between items-center gap-4 pt-2 border-t border-zinc-50">
                 <span class="text-[10px] font-bold text-zinc-400 uppercase">% Impedimento</span>
-                <span class="text-sm font-black text-red-600">${raw.percentual_impedimento.toFixed(2).replace('.', ',')}%</span>
+                <span class="text-sm font-black text-red-600">${(raw.percentual_impedimento ?? 0).toFixed(2).replace('.', ',')}%</span>
               </div>
             </div>
           </div>

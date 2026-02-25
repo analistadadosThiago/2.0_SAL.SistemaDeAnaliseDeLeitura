@@ -46,3 +46,20 @@ export interface DashboardFiltros {
   mes: string;
   rz: number;
 }
+
+export interface ConsultaLeitura {
+  mes: string;
+  ano: number;
+  ul: string;
+  instalacao_res: number;
+  medidor_res: string;
+  reg: string;
+  matr: string;
+  cod: string;
+  leitura: number;
+  consumo: number;
+  dig: string;
+  nosb_imp: string;
+  nosb_sim: string;
+  cna: string;
+}
