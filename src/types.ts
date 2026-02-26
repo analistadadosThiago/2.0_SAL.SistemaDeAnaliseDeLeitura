@@ -76,4 +76,21 @@ export interface ControleLeituristaData {
   leit_total: number;
   impedimentos: number;
   indicador: number;
+  tipo?: string;
+}
+
+export interface ControleEvidenciasData {
+  mes: string;
+  ano: number;
+  razao: number | string;
+  ul: string;
+  solicitadas: number;
+  realizadas: number;
+  nao_realizadas: number;
+  matr: string;
+  cod: string;
+  leitura: number;
+  dig: string;
+  foto?: string;
+  indicador: number;
 }

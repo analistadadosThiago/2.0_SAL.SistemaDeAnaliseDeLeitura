@@ -46,6 +46,7 @@ export default function ControleLeiturista() {
 
   // Data State
   const [results, setResults] = useState<ControleLeituristaData[]>([]);
+  const [activeTab, setActiveTab] = useState<'ul' | 'razao' | 'matricula'>('ul');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
 
@@ -75,26 +76,25 @@ export default function ControleLeiturista() {
       console.error('Erro ao buscar meses:', e);
     }
 
-    // Fetch Matriculas from public."LeituraGeral"
+    // Fetch Matriculas using RPC
     try {
-      // Log Supabase config for debugging as requested
-      console.log('SAL System - Supabase Config Check:', {
-        url: import.meta.env.VITE_SUPABASE_URL ? 'Configurada' : 'MISSING',
-        key: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Configurada' : 'MISSING'
-      });
-
-      // Simple fetch for matriculas with ordering as requested
-      const { data, error } = await supabase
-        .from('"LeituraGeral"')
-        .select('matr')
-        .order('matr', { ascending: true });
-      
+      const { data, error } = await supabase.rpc('get_lista_matriculas');
       if (error) throw error;
-      
-      // Use Set for unique values in JS to ensure distinctness and performance
-      matriculas = [...new Set((data || []).map(item => item.matr))];
+      matriculas = (data as any[] || []).map(item => typeof item === 'object' ? item.matr : item).sort();
     } catch (e) {
-      console.error('Erro ao buscar matrículas:', e);
+      console.error('Erro ao buscar matrículas via RPC:', e);
+      // Fallback: If RPC fails (e.g. PGRST202), try a limited fetch from table
+      try {
+        const { data: fallbackData } = await supabase
+          .from('"LeituraGeral"')
+          .select('matr')
+          .limit(10000);
+        if (fallbackData) {
+          matriculas = [...new Set(fallbackData.map(item => item.matr))].sort();
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback de matrículas falhou:', fallbackErr);
+      }
     }
 
     setOptions({ anos, meses, matriculas });
@@ -145,7 +145,12 @@ export default function ControleLeiturista() {
       }
 
       // Use RPC fields directly as requested
-      setResults(data || []);
+      const processedData = (data || []).map((item: any) => ({
+        ...item,
+        indicador: Number(item.indicador || 0)
+      }));
+      
+      setResults(processedData);
       setHasGenerated(true);
     } catch (err: any) {
       console.error('Erro na consulta:', err);
@@ -155,7 +160,43 @@ export default function ControleLeiturista() {
     }
   };
 
-  // 3. Totals
+  // 3. Grouping Logic
+  const groupedResults = (() => {
+    if (activeTab === 'ul') {
+      return [...results].sort((a, b) => b.indicador - a.indicador);
+    }
+
+    const grouped: { [key: string]: ControleLeituristaData } = {};
+
+    results.forEach(r => {
+      const key = activeTab === 'razao' ? `${r.razao}` : `${r.razao}-${r.matr}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          ...r,
+          ul: activeTab === 'razao' ? '-' : r.ul,
+          matr: activeTab === 'razao' ? '-' : r.matr,
+          leit_urb: 0,
+          leit_povoado: 0,
+          leit_rural: 0,
+          leit_total: 0,
+          impedimentos: 0,
+          indicador: 0
+        };
+      }
+      grouped[key].leit_urb += Number(r.leit_urb || 0);
+      grouped[key].leit_povoado += Number(r.leit_povoado || 0);
+      grouped[key].leit_rural += Number(r.leit_rural || 0);
+      grouped[key].leit_total += Number(r.leit_total || 0);
+      grouped[key].impedimentos += Number(r.impedimentos || 0);
+    });
+
+    return Object.values(grouped).map(g => ({
+      ...g,
+      indicador: g.leit_total > 0 ? (g.impedimentos / g.leit_total) * 100 : 0
+    })).sort((a, b) => b.indicador - a.indicador);
+  })();
+
+  // 4. Totals
   const totals = results.reduce((acc, curr) => {
     const urb = Number(curr.leit_urb || 0);
     const povoado = Number(curr.leit_povoado || 0);
@@ -174,11 +215,31 @@ export default function ControleLeiturista() {
 
   const totalIndicador = totals.total > 0 ? (totals.impedimentos / totals.total) * 100 : 0;
 
-  // 4. Pagination
-  const totalPages = Math.ceil(results.length / pageSize);
-  const paginatedResults = results.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  // Grouped Totals for Cards
+  const urbImpedimentos = results.reduce((sum, r) => {
+    const isUrb = String(r.tipo || '').toLowerCase() === 'urbano' || (Number(r.leit_urb || 0) > 0 && Number(r.leit_povoado || 0) === 0 && Number(r.leit_rural || 0) === 0);
+    return sum + (isUrb ? Number(r.impedimentos || 0) : 0);
+  }, 0);
+  
+  const povoadoImpedimentos = results.reduce((sum, r) => {
+    const isPov = String(r.tipo || '').toLowerCase() === 'povoado' || (Number(r.leit_povoado || 0) > 0 && Number(r.leit_urb || 0) === 0 && Number(r.leit_rural || 0) === 0);
+    return sum + (isPov ? Number(r.impedimentos || 0) : 0);
+  }, 0);
+  
+  const ruralImpedimentos = results.reduce((sum, r) => {
+    const isRur = String(r.tipo || '').toLowerCase() === 'rural' || (Number(r.leit_rural || 0) > 0 && Number(r.leit_urb || 0) === 0 && Number(r.leit_povoado || 0) === 0);
+    return sum + (isRur ? Number(r.impedimentos || 0) : 0);
+  }, 0);
 
-  // 5. Export
+  const urbIndicador = totals.urb > 0 ? (urbImpedimentos / totals.urb) * 100 : 0;
+  const povoadoIndicador = totals.povoado > 0 ? (povoadoImpedimentos / totals.povoado) * 100 : 0;
+  const ruralIndicador = totals.rural > 0 ? (ruralImpedimentos / totals.rural) * 100 : 0;
+
+  // 5. Pagination
+  const totalPages = Math.ceil(groupedResults.length / pageSize);
+  const paginatedResults = groupedResults.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  // 6. Export
   const exportToPDF = () => {
     const doc = new jsPDF('l', 'mm', 'a4');
     const timestamp = new Date().toLocaleString('pt-BR');
@@ -188,7 +249,7 @@ export default function ControleLeiturista() {
       "Leit. Povoado", "Leit. Rural", "Leit. Total", "IMPEDIMENTOS", "INDICADOR"
     ];
     const tableRows = [
-      ...results.map(r => [
+      ...groupedResults.map(r => [
         r.ano, r.mes, r.razao, r.ul, r.matr, r.leit_urb,
         r.leit_povoado, r.leit_rural, r.leit_total, r.impedimentos, 
         `${(r.indicador).toFixed(2).replace('.', ',')}%`
@@ -214,7 +275,17 @@ export default function ControleLeiturista() {
       startY: 28,
       theme: 'grid',
       styles: { fontSize: 7, cellPadding: 2 },
-      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255] }
+      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255] },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 10) {
+          const val = parseFloat(data.cell.text[0].replace(',', '.'));
+          if (val > 0.51) {
+            data.cell.styles.fillColor = [254, 226, 226];
+            data.cell.styles.textColor = [220, 38, 38];
+            data.cell.styles.fontStyle = 'italic';
+          }
+        }
+      }
     });
 
     const pageCount = (doc as any).internal.getNumberOfPages();
@@ -230,12 +301,12 @@ export default function ControleLeiturista() {
       );
     }
 
-    doc.save(`SAL_Controle_Leiturista_${new Date().getTime()}.pdf`);
+    doc.save(`SAL_Controle_Leiturista_${activeTab}_${new Date().getTime()}.pdf`);
   };
 
   const exportToExcel = () => {
     const exportData = [
-      ...results.map(r => ({
+      ...groupedResults.map(r => ({
         "ANO": r.ano,
         "MES": r.mes,
         "RAZAO": r.razao,
@@ -271,26 +342,45 @@ export default function ControleLeiturista() {
     const dateStr = now.toLocaleDateString('pt-BR').replace(/\//g, '-');
     const timeStr = now.toLocaleTimeString('pt-BR').replace(/:/g, '-');
     
-    XLSX.writeFile(workbook, `SAL_Controle_Leiturista_${dateStr}_${timeStr}.xlsx`);
+    XLSX.writeFile(workbook, `SAL_Controle_Leiturista_${activeTab}_${dateStr}_${timeStr}.xlsx`);
   };
 
-  // 6. Chart Data
-  // Group by Matrícula + Razão
-  const chartData = results.reduce((acc: { [key: string]: number }, curr) => {
-    const key = `${curr.matr} - RZ ${curr.razao}`;
-    acc[key] = (acc[key] || 0) + (curr.impedimentos || 0);
-    return acc;
-  }, {});
+  // 7. Chart Data (Always grouped by Matrícula + Razão for the chart)
+  const chartResults = (() => {
+    const grouped: { [key: string]: ControleLeituristaData } = {};
+    results.forEach(r => {
+      const key = `${r.razao}-${r.matr}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          ...r,
+          leit_urb: 0,
+          leit_povoado: 0,
+          leit_rural: 0,
+          leit_total: 0,
+          impedimentos: 0,
+          indicador: 0
+        };
+      }
+      grouped[key].leit_urb += Number(r.leit_urb || 0);
+      grouped[key].leit_povoado += Number(r.leit_povoado || 0);
+      grouped[key].leit_rural += Number(r.leit_rural || 0);
+      grouped[key].leit_total += Number(r.leit_total || 0);
+      grouped[key].impedimentos += Number(r.impedimentos || 0);
+    });
 
-  const sortedChartData = (Object.entries(chartData) as [string, number][])
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15); // Top 15 for readability
+    return Object.values(grouped)
+      .sort((a, b) => b.impedimentos - a.impedimentos)
+      .slice(0, 15);
+  })();
 
   const chartOptions: ApexCharts.ApexOptions = {
     chart: {
       type: 'bar',
       toolbar: { show: false },
       fontFamily: 'Inter, sans-serif'
+    },
+    grid: {
+      show: false // Remove background grid lines
     },
     plotOptions: {
       bar: {
@@ -306,17 +396,25 @@ export default function ControleLeiturista() {
       style: { fontSize: '10px', colors: ['#3f3f46'] }
     },
     xaxis: {
-      categories: sortedChartData.map(d => d[0]),
+      categories: chartResults.map(d => d.matr),
       labels: { rotate: -45, style: { fontSize: '10px' } }
     },
     yaxis: { title: { text: 'Impedimentos' } },
     legend: { show: false },
+    tooltip: {
+      y: {
+        formatter: (val, { seriesIndex, dataPointIndex, w }) => {
+          const item = chartResults[dataPointIndex];
+          return `Razão: ${item.razao}<br/>Qtd Impedimentos: ${val}<br/>Qtd Leitura Urb: ${item.leit_urb}<br/>Qtd Leitura Povoado: ${item.leit_povoado}<br/>Qtd Leitura Rural: ${item.leit_rural}`;
+        }
+      }
+    },
     colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
   };
 
   const chartSeries = [{
     name: 'Impedimentos',
-    data: sortedChartData.map(d => d[1])
+    data: chartResults.map(d => d.impedimentos)
   }];
 
   return (
@@ -324,7 +422,7 @@ export default function ControleLeiturista() {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">Controle de Leiturista</h1>
-          <p className="text-zinc-500 text-sm mt-1">Análise de produtividade e impedimentos por profissional.</p>
+          <p className="text-zinc-500 text-sm mt-1">Análise de produtividade e impedimentos.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
@@ -419,27 +517,96 @@ export default function ControleLeiturista() {
           animate={{ opacity: 1 }}
           className="space-y-8"
         >
-          {/* Summary Cards */}
+          {/* Summary Cards - Row 1 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <SummaryCard title="Somatório Leit. Urb" value={totals.urb.toLocaleString()} color="blue" />
-            <SummaryCard title="Somatório Leit. Povoado" value={totals.povoado.toLocaleString()} color="emerald" />
-            <SummaryCard title="Somatório Leit. Rural" value={totals.rural.toLocaleString()} color="amber" />
-            <SummaryCard title="Somatório Impedimentos" value={totals.impedimentos.toLocaleString()} color="red" />
+            <SummaryCard 
+              title="Leit. Urb" 
+              readings={totals.urb} 
+              impediments={urbImpedimentos} 
+              indicator={urbIndicador} 
+              color="blue" 
+            />
+            <SummaryCard 
+              title="Leit. Povoado" 
+              readings={totals.povoado} 
+              impediments={povoadoImpedimentos} 
+              indicator={povoadoIndicador} 
+              color="emerald" 
+            />
+            <SummaryCard 
+              title="Leit. Rural" 
+              readings={totals.rural} 
+              impediments={ruralImpedimentos} 
+              indicator={ruralIndicador} 
+              color="amber" 
+            />
+            <SummaryCard 
+              title="Impedimentos Geral" 
+              readings={totals.total} 
+              impediments={totals.impedimentos} 
+              indicator={totalIndicador} 
+              color="red" 
+            />
+          </div>
+
+          {/* Summary Cards - Row 2 */}
+          <div className="grid grid-cols-1 gap-6">
+            <SummaryCard 
+              title="Leituras Geral" 
+              readings={totals.total} 
+              impediments={totals.impedimentos} 
+              indicator={totalIndicador} 
+              color="zinc" 
+              isWide
+            />
           </div>
 
           {/* Table Section */}
           <div className="bg-white rounded-[32px] border border-zinc-100 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-zinc-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <h3 className="text-lg font-bold text-zinc-900 flex items-center gap-2">
-                <Database className="w-5 h-5 text-blue-500" />
-                Relação de Impedimentos
-              </h3>
+              <div className="flex flex-col gap-1">
+                <h3 className="text-lg font-bold text-zinc-900 flex items-center gap-2">
+                  <Database className="w-5 h-5 text-blue-500" />
+                  Relação Quantitativa de Impedimentos
+                </h3>
+                <div className="flex items-center gap-4 mt-2">
+                  <button 
+                    onClick={() => { setActiveTab('ul'); setCurrentPage(1); }}
+                    className={cn(
+                      "text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-lg transition-all",
+                      activeTab === 'ul' ? "bg-blue-50 text-blue-600" : "text-zinc-400 hover:text-zinc-600"
+                    )}
+                  >
+                    Por UL
+                  </button>
+                  <button 
+                    onClick={() => { setActiveTab('razao'); setCurrentPage(1); }}
+                    className={cn(
+                      "text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-lg transition-all",
+                      activeTab === 'razao' ? "bg-blue-50 text-blue-600" : "text-zinc-400 hover:text-zinc-600"
+                    )}
+                  >
+                    Por Razão
+                  </button>
+                  <button 
+                    onClick={() => { setActiveTab('matricula'); setCurrentPage(1); }}
+                    className={cn(
+                      "text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-lg transition-all",
+                      activeTab === 'matricula' ? "bg-blue-50 text-blue-600" : "text-zinc-400 hover:text-zinc-600"
+                    )}
+                  >
+                    Matrícula
+                  </button>
+                </div>
+              </div>
               <div className="flex items-center gap-2">
-                <button onClick={exportToPDF} className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-500 transition-colors" title="Exportar PDF">
+                <button onClick={exportToPDF} className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-500 transition-colors flex items-center gap-2" title="Exportar PDF">
                   <Download className="w-5 h-5" />
+                  <span className="text-xs font-bold uppercase">PDF</span>
                 </button>
-                <button onClick={exportToExcel} className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-500 transition-colors" title="Exportar Excel">
+                <button onClick={exportToExcel} className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-500 transition-colors flex items-center gap-2" title="Exportar Excel">
                   <FileSpreadsheet className="w-5 h-5" />
+                  <span className="text-xs font-bold uppercase">Excel</span>
                 </button>
               </div>
             </div>
@@ -450,8 +617,12 @@ export default function ControleLeiturista() {
                     <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Ano</th>
                     <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Mês</th>
                     <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Razão</th>
-                    <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">UL.</th>
-                    <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Matr</th>
+                    {activeTab !== 'razao' && activeTab !== 'matricula' && (
+                      <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">UL.</th>
+                    )}
+                    {activeTab !== 'razao' && (
+                      <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Matr</th>
+                    )}
                     <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Leit. Urb</th>
                     <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Leit. Povoado</th>
                     <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Leit. Rural</th>
@@ -461,31 +632,34 @@ export default function ControleLeiturista() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
-                  {paginatedResults.map((r, i) => (
-                    <tr key={i} className="hover:bg-zinc-50/50 transition-colors">
-                      <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.ano}</td>
-                      <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.mes}</td>
-                      <td className="px-4 py-3 text-xs font-bold text-zinc-900">{r.razao}</td>
-                      <td className="px-4 py-3 text-xs font-bold text-blue-600">{r.ul}</td>
-                      <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.matr}</td>
-                      <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.leit_urb}</td>
-                      <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.leit_povoado}</td>
-                      <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.leit_rural}</td>
-                      <td className="px-4 py-3 text-xs font-bold text-zinc-900">{r.leit_total}</td>
-                      <td className="px-4 py-3 text-xs font-black text-red-600">{r.impedimentos}</td>
-                      <td className="px-4 py-3 text-xs font-bold text-zinc-900">{(r.indicador).toFixed(2).replace('.', ',')}%</td>
-                    </tr>
-                  ))}
-                  {/* Total Row */}
-                  <tr className="bg-zinc-100/50 font-black">
-                    <td className="px-4 py-3 text-xs text-zinc-900" colSpan={5}>TOTAL GERAL</td>
-                    <td className="px-4 py-3 text-xs text-zinc-900">{totals.urb}</td>
-                    <td className="px-4 py-3 text-xs text-zinc-900">{totals.povoado}</td>
-                    <td className="px-4 py-3 text-xs text-zinc-900">{totals.rural}</td>
-                    <td className="px-4 py-3 text-xs text-zinc-900">{totals.total}</td>
-                    <td className="px-4 py-3 text-xs text-red-600">{totals.impedimentos}</td>
-                    <td className="px-4 py-3 text-xs text-zinc-900">{totalIndicador.toFixed(2).replace('.', ',')}%</td>
-                  </tr>
+                  {paginatedResults.map((r, i) => {
+                    const isHighlighted = r.indicador > 0.51;
+                    return (
+                      <tr 
+                        key={i} 
+                        className={cn(
+                          "hover:bg-zinc-50/50 transition-colors",
+                          isHighlighted && "bg-red-50 italic"
+                        )}
+                      >
+                        <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.ano}</td>
+                        <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.mes}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-zinc-900">{r.razao}</td>
+                        {activeTab !== 'razao' && activeTab !== 'matricula' && (
+                          <td className="px-4 py-3 text-xs font-bold text-blue-600">{r.ul}</td>
+                        )}
+                        {activeTab !== 'razao' && (
+                          <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.matr}</td>
+                        )}
+                        <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.leit_urb}</td>
+                        <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.leit_povoado}</td>
+                        <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.leit_rural}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-zinc-900">{r.leit_total}</td>
+                        <td className="px-4 py-3 text-xs font-black text-red-600">{r.impedimentos}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-zinc-900">{(r.indicador).toFixed(2).replace('.', ',')}%</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -518,7 +692,9 @@ export default function ControleLeiturista() {
               <div className="p-2 bg-blue-50 rounded-xl text-blue-500">
                 <BarChart3 className="w-5 h-5" />
               </div>
-              <h3 className="text-lg font-bold text-zinc-900">Impedimentos por Matrícula e Razão</h3>
+              <h3 className="text-lg font-bold text-zinc-900">
+                Relação Gráfica de Impedimentos {activeTab === 'ul' ? '(Por UL)' : activeTab === 'razao' ? '(Por Razão)' : '(Por Matrícula)'}
+              </h3>
             </div>
             <div className="h-[400px] w-full">
               <Chart 
@@ -528,6 +704,12 @@ export default function ControleLeiturista() {
                 height="100%"
               />
             </div>
+          </div>
+
+          {/* Footer Identity */}
+          <div className="flex flex-col items-center justify-center py-8 border-t border-zinc-100 gap-2">
+            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.3em]">Copyright SAL: Sistema de Análise de Leitura © 2026</p>
+            <p className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">{new Date().toLocaleString('pt-BR')}</p>
           </div>
         </motion.div>
       )}
@@ -545,18 +727,71 @@ export default function ControleLeiturista() {
   );
 }
 
-function SummaryCard({ title, value, color }: { title: string, value: string, color: 'blue' | 'emerald' | 'amber' | 'red' }) {
+function SummaryCard({ 
+  title, 
+  readings, 
+  impediments, 
+  indicator, 
+  color, 
+  isWide = false 
+}: { 
+  title: string, 
+  readings: number, 
+  impediments: number, 
+  indicator: number, 
+  color: 'blue' | 'emerald' | 'amber' | 'red' | 'zinc',
+  isWide?: boolean
+}) {
   const colors = {
     blue: "bg-blue-50 text-blue-600 border-blue-100",
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
     amber: "bg-amber-50 text-amber-600 border-amber-100",
-    red: "bg-red-50 text-red-600 border-red-100"
+    red: "bg-red-50 text-red-600 border-red-100",
+    zinc: "bg-zinc-50 text-zinc-600 border-zinc-100"
   };
 
   return (
-    <div className={cn("p-6 rounded-[28px] border shadow-sm flex flex-col gap-2 bg-white", colors[color])}>
-      <span className="text-[10px] font-black uppercase tracking-widest opacity-60">{title}</span>
-      <span className="text-2xl font-black tracking-tight">{value}</span>
+    <div className={cn(
+      "p-6 rounded-[28px] border shadow-sm flex flex-col gap-4 bg-white transition-all hover:shadow-md", 
+      colors[color],
+      isWide && "md:col-span-2 lg:col-span-4 p-8"
+    )}>
+      <div className="flex items-center justify-between">
+        <span className={cn(
+          "font-black uppercase tracking-[0.2em] opacity-60",
+          isWide ? "text-xs" : "text-[10px]"
+        )}>{title}</span>
+        <div className={cn(
+          "px-3 py-1 rounded-full font-black",
+          isWide ? "text-sm px-4 py-2" : "text-[10px]",
+          indicator > 0.51 ? "bg-red-100 text-red-600" : "bg-zinc-100 text-zinc-600"
+        )}>
+          {indicator.toFixed(2).replace('.', ',')}%
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col">
+          <span className={cn(
+            "font-bold uppercase opacity-40",
+            isWide ? "text-xs" : "text-[10px]"
+          )}>Leituras</span>
+          <span className={cn(
+            "font-black tracking-tight",
+            isWide ? "text-3xl" : "text-xl"
+          )}>{readings.toLocaleString()}</span>
+        </div>
+        <div className="flex flex-col">
+          <span className={cn(
+            "font-bold uppercase opacity-40",
+            isWide ? "text-xs" : "text-[10px]"
+          )}>Impedimentos</span>
+          <span className={cn(
+            "font-black tracking-tight",
+            isWide ? "text-3xl" : "text-xl"
+          )}>{impediments.toLocaleString()}</span>
+        </div>
+      </div>
     </div>
   );
 }

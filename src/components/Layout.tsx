@@ -4,6 +4,7 @@ import {
   Search, 
   Activity,
   Users,
+  Camera,
   Menu,
   X
 } from 'lucide-react';
@@ -14,6 +15,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
   { icon: Search, label: 'Consulta', path: '/consulta' },
   { icon: Users, label: 'Controle de Leiturista', path: '/leiturista' },
+  { icon: Camera, label: 'Controle de Evidências', path: '/evidencias' },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

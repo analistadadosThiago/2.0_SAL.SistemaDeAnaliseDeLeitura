@@ -12,6 +12,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Consulta from './pages/Consulta';
 import ControleLeiturista from './pages/ControleLeiturista';
+import ControleEvidencias from './pages/ControleEvidencias';
 import PlaceholderPage from './pages/Placeholder';
 
 export default function App() {
@@ -22,16 +23,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/consulta" element={<Consulta />} />
           <Route path="/leiturista" element={<ControleLeiturista />} />
-          <Route 
-            path="/evidencias" 
-            element={
-              <PlaceholderPage 
-                title="Controle de Evidências" 
-                icon={Camera} 
-                description="Visualização e validação de fotos e comentários enviados pelos leituristas durante as visitas técnicas."
-              />
-            } 
-          />
+          <Route path="/evidencias" element={<ControleEvidencias />} />
           <Route 
             path="/impressao" 
             element={
