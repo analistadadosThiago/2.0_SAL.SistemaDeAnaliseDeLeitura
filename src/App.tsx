@@ -25,16 +25,6 @@ export default function App() {
           <Route path="/leiturista" element={<ControleLeiturista />} />
           <Route path="/evidencias" element={<ControleEvidencias />} />
           <Route 
-            path="/impressao" 
-            element={
-              <PlaceholderPage 
-                title="Controle de Impressão" 
-                icon={Printer} 
-                description="Geração e impressão de relatórios de produtividade, faturas e ordens de serviço."
-              />
-            } 
-          />
-          <Route 
             path="/horario" 
             element={
               <PlaceholderPage 

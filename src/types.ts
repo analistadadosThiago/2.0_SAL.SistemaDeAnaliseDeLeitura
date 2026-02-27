@@ -80,17 +80,13 @@ export interface ControleLeituristaData {
 }
 
 export interface ControleEvidenciasData {
-  mes: string;
-  ano: number;
-  razao: number | string;
-  ul: string;
-  solicitadas: number;
-  realizadas: number;
-  nao_realizadas: number;
-  matr: string;
-  cod: string;
-  leitura: number;
-  dig: string;
-  foto?: string;
-  indicador: number;
+  v_mes: string;
+  v_ano: number;
+  v_razao: number | string;
+  v_ul: string;
+  v_solicitadas: number;
+  v_realizadas: number;
+  v_nao_realizadas: number;
+  v_matr: string;
+  v_indicador?: number;
 }
