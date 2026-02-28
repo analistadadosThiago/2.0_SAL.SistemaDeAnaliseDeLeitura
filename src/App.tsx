@@ -13,6 +13,9 @@ import Dashboard from './pages/Dashboard';
 import Consulta from './pages/Consulta';
 import ControleLeiturista from './pages/ControleLeiturista';
 import ControleEvidencias from './pages/ControleEvidencias';
+import NosbImpedimento from './pages/NosbImpedimento';
+import NosbSimulacao from './pages/NosbSimulacao';
+import ControleHorario from './pages/ControleHorario';
 import PlaceholderPage from './pages/Placeholder';
 
 export default function App() {
@@ -24,16 +27,9 @@ export default function App() {
           <Route path="/consulta" element={<Consulta />} />
           <Route path="/leiturista" element={<ControleLeiturista />} />
           <Route path="/evidencias" element={<ControleEvidencias />} />
-          <Route 
-            path="/horario" 
-            element={
-              <PlaceholderPage 
-                title="Controle de Horários" 
-                icon={Clock} 
-                description="Registro de ponto eletrônico, horas trabalhadas e controle de jornada da equipe de campo."
-              />
-            } 
-          />
+          <Route path="/nosb" element={<NosbImpedimento />} />
+          <Route path="/nosb-simulacao" element={<NosbSimulacao />} />
+          <Route path="/horario" element={<ControleHorario />} />
           <Route 
             path="/sequencia" 
             element={

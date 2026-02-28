@@ -90,3 +90,42 @@ export interface ControleEvidenciasData {
   v_matr: string;
   v_indicador?: number;
 }
+
+export interface NosbImpedimentoData {
+  f_mes: string;
+  f_ano: string;
+  f_rz: string;
+  f_ul: string;
+  f_instalacao: string;
+  f_medidor: string;
+  f_reg: string;
+  f_tipo: string;
+  f_matr: string;
+  f_nl: string;
+  f_l_atual: string;
+  f_motivo: string;
+}
+
+export interface NosbSimulacaoData {
+  f_mes: string;
+  f_ano: string;
+  f_rz: string;
+  f_ul: string;
+  f_instalacao: string;
+  f_medidor: string;
+  f_reg: string;
+  f_tipo: string;
+  f_matr: string;
+  f_nl: string;
+  f_l_atual: string;
+  f_motivo: string;
+}
+
+export interface ControleHorarioData {
+  f_matricula: string;
+  f_data: string;
+  f_hora_inicial: string;
+  f_hora_final: string;
+  f_tempo_servico: string;
+  f_media_leitura_hora: string;
+}

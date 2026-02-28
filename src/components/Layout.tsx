@@ -6,7 +6,10 @@ import {
   Users,
   Camera,
   Menu,
-  X
+  X,
+  Filter,
+  TrendingUp,
+  Clock
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../lib/utils';
@@ -16,6 +19,9 @@ const menuItems = [
   { icon: Search, label: 'Consulta', path: '/consulta' },
   { icon: Users, label: 'Controle de Leiturista', path: '/leiturista' },
   { icon: Camera, label: 'Controle de Evidências', path: '/evidencias' },
+  { icon: Filter, label: 'N’OSB - Impedimento', path: '/nosb' },
+  { icon: TrendingUp, label: 'N’OSB - Simulação', path: '/nosb-simulacao' },
+  { icon: Clock, label: 'Controle de Horário', path: '/horario' },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
