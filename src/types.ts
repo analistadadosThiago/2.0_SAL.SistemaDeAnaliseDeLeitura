@@ -127,5 +127,7 @@ export interface ControleHorarioData {
   f_hora_inicial: string;
   f_hora_final: string;
   f_tempo_servico: string;
+  f_tempo_servico_formatado: string;
   f_media_leitura_hora: string;
+  f_media_leitura_hora_inteiro: number;
 }
