@@ -131,3 +131,18 @@ export interface ControleHorarioData {
   f_media_leitura_hora: string;
   f_media_leitura_hora_inteiro: number;
 }
+
+export interface SequenciaLeituraData {
+  f_mes: string;
+  f_ano: string;
+  f_rz: string;
+  f_ul: string;
+  f_rz_ul_lv: string;
+  f_instalacao: string;
+  f_medidor: string;
+  f_reg: string;
+  f_matr: string;
+  f_hora: string;
+  f_data: string;
+  f_endereco: string;
+}

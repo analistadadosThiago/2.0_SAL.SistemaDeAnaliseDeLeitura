@@ -16,6 +16,7 @@ import ControleEvidencias from './pages/ControleEvidencias';
 import NosbImpedimento from './pages/NosbImpedimento';
 import NosbSimulacao from './pages/NosbSimulacao';
 import ControleHorario from './pages/ControleHorario';
+import SequenciaLeitura from './pages/SequenciaLeitura';
 import PlaceholderPage from './pages/Placeholder';
 
 export default function App() {
@@ -30,16 +31,7 @@ export default function App() {
           <Route path="/nosb" element={<NosbImpedimento />} />
           <Route path="/nosb-simulacao" element={<NosbSimulacao />} />
           <Route path="/horario" element={<ControleHorario />} />
-          <Route 
-            path="/sequencia" 
-            element={
-              <PlaceholderPage 
-                title="Sequência de Leitura" 
-                icon={ListOrdered} 
-                description="Definição da ordem lógica das rotas para otimização do deslocamento e aumento da eficiência operacional."
-              />
-            } 
-          />
+          <Route path="/sequencia" element={<SequenciaLeitura />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

@@ -9,7 +9,8 @@ import {
   X,
   Filter,
   TrendingUp,
-  Clock
+  Clock,
+  ListOrdered
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../lib/utils';
@@ -21,7 +22,8 @@ const menuItems = [
   { icon: Camera, label: 'Controle de Evidências', path: '/evidencias' },
   { icon: Filter, label: 'N’OSB - Impedimento', path: '/nosb' },
   { icon: TrendingUp, label: 'N’OSB - Simulação', path: '/nosb-simulacao' },
-  { icon: Clock, label: 'Controle de Horário', path: '/horario' },
+  { icon: Clock, label: 'Relatório de Horário', path: '/horario' },
+  { icon: ListOrdered, label: 'Sequência de Leitura', path: '/sequencia' },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
