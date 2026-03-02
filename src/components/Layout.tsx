@@ -5,6 +5,7 @@ import {
   Activity,
   Users,
   Camera,
+  Printer,
   Menu,
   X,
   Filter,
@@ -24,6 +25,7 @@ const menuItems = [
   { icon: TrendingUp, label: 'N’OSB - Simulação', path: '/nosb-simulacao' },
   { icon: Clock, label: 'Relatório de Horário', path: '/horario' },
   { icon: ListOrdered, label: 'Sequência de Leitura', path: '/sequencia' },
+  { icon: Printer, label: 'Controle de Apresentação', path: '/apresentacao' },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

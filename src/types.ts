@@ -146,3 +146,17 @@ export interface SequenciaLeituraData {
   f_data: string;
   f_endereco: string;
 }
+
+export interface ApresentacaoData {
+  f_mes: string;
+  f_ano: string;
+  f_rz: string;
+  f_ul: string;
+  f_instalacao: string;
+  f_medidor: string;
+  f_reg: string;
+  f_matr: string;
+  f_nl: string;
+  f_l_atual: string;
+  f_cna: string;
+}
