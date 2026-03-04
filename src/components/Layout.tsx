@@ -99,9 +99,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           {isSidebarOpen && (
-            <div className="flex flex-col min-w-0">
-              <span className="font-black text-white text-xl tracking-tighter">SAL</span>
-              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate">Sistema de Análise de Leitura</span>
+            <div className="flex flex-col min-w-0 justify-center">
+              <span className="font-black text-white text-xl tracking-tighter leading-none">SAL</span>
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate mt-1">Sistema de Acompanhamento de Leitura</span>
             </div>
           )}
         </div>
@@ -209,7 +209,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {/* Footer */}
           <footer className="mt-12 py-8 border-t border-zinc-200 text-center space-y-2">
             <p className="text-sm font-medium text-zinc-500">
-              Copyright SAL: Sistema de Análise de Leitura © 2026 | Criado por <span className="text-zinc-900 font-bold">Thiago Marques Lopes</span>
+              Copyright SAL: Sistema de Acompanhamento de Leitura © 2026 | Criado por <span className="text-zinc-900 font-bold">Thiago Marques Lopes</span>
             </p>
             <div className="flex items-center justify-center gap-3 text-[11px] font-black text-zinc-400 uppercase tracking-[0.2em]">
               <span className="bg-zinc-100 px-2 py-0.5 rounded">{formatDate(currentTime)} - {formatTime(currentTime)}</span>
