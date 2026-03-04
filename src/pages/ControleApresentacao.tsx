@@ -69,7 +69,6 @@ export default function ControleApresentacao() {
       const { data: filtersData, error: filtersError } = await supabase.rpc('get_filtros_apresentacao');
 
       if (filtersError) {
-        console.error('Erro ao buscar filtros de apresentação:', filtersError);
         setOptions({ anos: [], meses: [], razoes: [], matriculas: [], motivos: [] });
       } else {
         const anos = (filtersData || [])
@@ -84,7 +83,7 @@ export default function ControleApresentacao() {
         const razoes = (filtersData || [])
           .filter((f: any) => f.coluna === 'rz')
           .map((f: any) => String(f.valor))
-          .sort();
+          .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
 
         const matriculas = (filtersData || [])
           .filter((f: any) => f.coluna === 'matr')
@@ -101,7 +100,7 @@ export default function ControleApresentacao() {
         if (anos.length > 0) setAno(anos[0]);
       }
     } catch (e) {
-      console.error('Erro ao buscar filtros:', e);
+      // Error handled silently as per optimization request
     } finally {
       setLoadingFilters(false);
     }
@@ -129,11 +128,11 @@ export default function ControleApresentacao() {
       while (hasMore) {
         const { data, error: rpcError } = await supabase
           .rpc('get_dados_apresentacao', {
-            p_ano: ano ? Number(ano) : null,
-            p_mes: mes || null,
-            p_rz: razao ? Number(razao) : null,
-            p_matr: matr || null,
-            p_motivo: motivo || null
+            p_ano: String(ano || ''),
+            p_mes: String(mes || ''),
+            p_rz: String(razao || ''),
+            p_matr: String(matr || ''),
+            p_cna: String(motivo || '')
           })
           .range(start, end);
 
@@ -162,7 +161,6 @@ export default function ControleApresentacao() {
       setResults(allData);
       setHasGenerated(true);
     } catch (err: any) {
-      console.error('Erro na consulta:', err);
       setError('Ocorreu um erro ao realizar a consulta. Tente novamente.');
     } finally {
       setLoading(false);
@@ -186,11 +184,11 @@ export default function ControleApresentacao() {
     const summary: Record<string, QuantitativeSummary> = {};
     
     results.forEach(r => {
-      const key = `${r.f_rz}-${r.f_cna}`;
+      const key = `${r.f_rz}-${r.f_motivo}`;
       if (!summary[key]) {
         summary[key] = {
           razao: r.f_rz,
-          motivo: r.f_cna,
+          motivo: r.f_motivo,
           quantidade: 0
         };
       }
@@ -198,7 +196,7 @@ export default function ControleApresentacao() {
     });
 
     return Object.values(summary).sort((a, b) => {
-      if (a.razao !== b.razao) return a.razao.localeCompare(b.razao);
+      if (a.razao !== b.razao) return a.razao.localeCompare(b.razao, undefined, { numeric: true });
       return a.motivo.localeCompare(b.motivo);
     });
   }, [results]);
@@ -215,7 +213,7 @@ export default function ControleApresentacao() {
     // Table 1
     const table1Column = ["MÊS", "ANO", "RAZÃO", "UL", "INSTALAÇÃO", "MEDIDOR", "REG", "MATR", "COD", "LEITURA", "MOTIVO"];
     const table1Rows = results.map(r => [
-      r.f_mes, r.f_ano, r.f_rz, r.f_ul, r.f_instalacao, r.f_medidor, r.f_reg, r.f_matr, r.f_nl, r.f_l_atual, r.f_cna
+      r.f_mes, r.f_ano, r.f_rz, r.f_ul, r.f_instalacao, r.f_medidor, r.f_reg, r.f_matr, r.f_cod, r.f_leitura, r.f_motivo
     ]);
 
     doc.setFontSize(18);
@@ -261,9 +259,9 @@ export default function ControleApresentacao() {
       "MEDIDOR": r.f_medidor,
       "REG": r.f_reg,
       "MATR": r.f_matr,
-      "COD": r.f_nl,
-      "LEITURA": r.f_l_atual,
-      "MOTIVO": r.f_cna
+      "COD": r.f_cod,
+      "LEITURA": r.f_leitura,
+      "MOTIVO": r.f_motivo
     }));
     const worksheet1 = XLSX.utils.json_to_sheet(detailedData);
     XLSX.utils.book_append_sheet(workbook, worksheet1, "Dados Detalhados");
@@ -454,9 +452,9 @@ export default function ControleApresentacao() {
                       <td className="px-4 py-3.5 text-xs text-zinc-700 font-bold">{r.f_medidor}</td>
                       <td className="px-4 py-3.5 text-xs text-zinc-600 font-medium">{r.f_reg}</td>
                       <td className="px-4 py-3.5 text-xs text-zinc-600 font-medium">{r.f_matr}</td>
-                      <td className="px-4 py-3.5 text-xs text-zinc-600 font-medium">{r.f_nl}</td>
-                      <td className="px-4 py-3.5 text-xs text-zinc-900 font-black">{r.f_l_atual}</td>
-                      <td className="px-4 py-3.5 text-xs text-red-600 font-bold">{r.f_cna}</td>
+                      <td className="px-4 py-3.5 text-xs text-zinc-600 font-medium">{r.f_cod}</td>
+                      <td className="px-4 py-3.5 text-xs text-zinc-900 font-black">{r.f_leitura}</td>
+                      <td className="px-4 py-3.5 text-xs text-red-600 font-bold">{r.f_motivo}</td>
                     </tr>
                   ))}
                 </tbody>

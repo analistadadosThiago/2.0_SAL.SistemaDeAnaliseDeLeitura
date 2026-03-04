@@ -11,27 +11,62 @@ import {
   Filter,
   TrendingUp,
   Clock,
-  ListOrdered
+  ListOrdered,
+  Sliders,
+  FileText,
+  ChevronDown
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../lib/utils';
 
-const menuItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: Search, label: 'Consulta', path: '/consulta' },
-  { icon: Users, label: 'Controle de Leiturista', path: '/leiturista' },
-  { icon: Camera, label: 'Controle de Evidências', path: '/evidencias' },
-  { icon: Filter, label: 'N’OSB - Impedimento', path: '/nosb' },
-  { icon: TrendingUp, label: 'N’OSB - Simulação', path: '/nosb-simulacao' },
-  { icon: Clock, label: 'Relatório de Horário', path: '/horario' },
-  { icon: ListOrdered, label: 'Sequência de Leitura', path: '/sequencia' },
-  { icon: Printer, label: 'Controle de Apresentação', path: '/apresentacao' },
+const menuGroups = [
+  { 
+    label: 'Principal',
+    items: [
+      { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+      { icon: Search, label: 'Consulta', path: '/consulta' },
+    ]
+  },
+  {
+    label: 'Controles',
+    icon: Sliders,
+    items: [
+      { icon: Users, label: 'Controle de Leiturista', path: '/leiturista' },
+      { icon: Camera, label: 'Controle de Evidências', path: '/evidencias' },
+    ]
+  },
+  {
+    label: 'Impressões',
+    icon: Printer,
+    items: [
+      { icon: Printer, label: 'Controle de Apresentação', path: '/apresentacao' },
+    ]
+  },
+  {
+    label: 'Relatórios',
+    icon: FileText,
+    items: [
+      { icon: Filter, label: 'N’OSB - Impedimento', path: '/nosb' },
+      { icon: TrendingUp, label: 'N’OSB - Simulação', path: '/nosb-simulacao' },
+      { icon: Clock, label: 'Relatório de Horário', path: '/horario' },
+      { icon: ListOrdered, label: 'Sequência de Leitura', path: '/sequencia' },
+    ]
+  }
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    'Controles': true,
+    'Impressões': true,
+    'Relatórios': true,
+  });
   const [currentTime, setCurrentTime] = useState(new Date());
   const location = useLocation();
+
+  const toggleGroup = (label: string) => {
+    setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
+  };
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -71,25 +106,81 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        <nav className="flex-1 py-6 overflow-y-auto">
-          {menuItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                "flex items-center gap-3 px-6 py-4 transition-all group relative",
-                location.pathname === item.path 
-                  ? "text-white bg-blue-600/10" 
-                  : "text-slate-400 hover:text-white hover:bg-slate-800/50"
-              )}
-            >
-              <item.icon className={cn("w-5 h-5 flex-shrink-0 transition-transform group-hover:scale-110", location.pathname === item.path ? "text-blue-500" : "group-hover:text-white")} />
-              {isSidebarOpen && <span className="text-sm font-bold tracking-tight">{item.label}</span>}
-              {location.pathname === item.path && (
-                <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
-              )}
-            </Link>
-          ))}
+        <nav className="flex-1 py-6 overflow-y-auto custom-scrollbar">
+          {menuGroups.map((group) => {
+            const hasSubitems = group.label !== 'Principal';
+            const isOpen = openGroups[group.label];
+            const GroupIcon = group.icon;
+
+            if (!hasSubitems) {
+              return group.items.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={cn(
+                    "flex items-center gap-3 px-6 py-3.5 transition-all group relative",
+                    location.pathname === item.path 
+                      ? "text-white bg-blue-600/10" 
+                      : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                  )}
+                >
+                  <item.icon className={cn("w-5 h-5 flex-shrink-0 transition-transform group-hover:scale-110", location.pathname === item.path ? "text-blue-500" : "group-hover:text-white")} />
+                  {isSidebarOpen && <span className={cn("text-sm tracking-tight", location.pathname === item.path ? "font-black" : "font-bold")}>{item.label}</span>}
+                  {location.pathname === item.path && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
+                  )}
+                </Link>
+              ));
+            }
+
+            return (
+              <div key={group.label} className="mb-2">
+                <button
+                  onClick={() => toggleGroup(group.label)}
+                  className={cn(
+                    "w-full flex items-center justify-between px-6 py-3 text-slate-400 hover:text-white hover:bg-slate-800/30 transition-all group",
+                    !isSidebarOpen && "justify-center"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    {GroupIcon && <GroupIcon className="w-5 h-5 flex-shrink-0 group-hover:text-blue-400 transition-colors" />}
+                    {isSidebarOpen && <span className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-500 group-hover:text-slate-300">{group.label}</span>}
+                  </div>
+                  {isSidebarOpen && (
+                    <ChevronDown className={cn("w-4 h-4 transition-transform duration-300", isOpen ? "rotate-180" : "rotate-0")} />
+                  )}
+                </button>
+
+                {isOpen && isSidebarOpen && (
+                  <div className="mt-1 space-y-1">
+                    {group.items.map((item) => (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        className={cn(
+                          "flex items-center gap-3 pl-12 pr-6 py-2.5 transition-all group relative",
+                          location.pathname === item.path 
+                            ? "text-white bg-blue-600/5" 
+                            : "text-slate-500 hover:text-white hover:bg-slate-800/20"
+                        )}
+                      >
+                        <item.icon className={cn("w-4 h-4 flex-shrink-0 transition-transform group-hover:scale-110", location.pathname === item.path ? "text-blue-500" : "group-hover:text-white")} />
+                        <span className={cn(
+                          "text-[13px] tracking-tight transition-colors",
+                          location.pathname === item.path ? "font-black text-blue-400" : "font-semibold"
+                        )}>
+                          {item.label}
+                        </span>
+                        {location.pathname === item.path && (
+                          <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-blue-500/50" />
+                        )}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
       </aside>
 

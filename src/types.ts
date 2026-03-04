@@ -156,7 +156,7 @@ export interface ApresentacaoData {
   f_medidor: string;
   f_reg: string;
   f_matr: string;
-  f_nl: string;
-  f_l_atual: string;
-  f_cna: string;
+  f_cod: string;
+  f_leitura: string;
+  f_motivo: string;
 }
