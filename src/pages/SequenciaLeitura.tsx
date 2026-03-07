@@ -460,21 +460,21 @@ export default function SequenciaLeitura() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[700px] overflow-y-auto custom-scrollbar border-b border-zinc-100">
               <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-zinc-50/50">
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Mês</th>
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Ano</th>
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Razão</th>
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">UL</th>
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Instalação</th>
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Medidor</th>
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Registro</th>
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Matr</th>
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Data</th>
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Hora</th>
-                    <th className="px-4 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Endereço</th>
+                <thead className="sticky top-0 z-20 bg-white">
+                  <tr className="bg-zinc-50 shadow-[0_1px_0_rgba(0,0,0,0.05)]">
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 w-px whitespace-nowrap">Mês</th>
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 w-px whitespace-nowrap">Ano</th>
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 w-px whitespace-nowrap">Razão</th>
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 w-px whitespace-nowrap">UL</th>
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 w-px whitespace-nowrap">Instalação</th>
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 w-px whitespace-nowrap">Medidor</th>
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 w-px whitespace-nowrap">Registro</th>
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 w-px whitespace-nowrap">Matr</th>
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 w-px whitespace-nowrap">Data</th>
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 w-px whitespace-nowrap">Hora</th>
+                    <th className="px-3 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Endereço</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
@@ -486,20 +486,22 @@ export default function SequenciaLeitura() {
                         key={i} 
                         className={cn(
                           "transition-all duration-500",
-                          isHighlighted ? "bg-yellow-400 ring-2 ring-yellow-600 ring-inset" : "hover:bg-zinc-50/80"
+                          isHighlighted 
+                            ? "bg-yellow-400 ring-2 ring-yellow-600 ring-inset text-black" 
+                            : "even:bg-zinc-50/30 hover:bg-zinc-100/50"
                         )}
                       >
-                        <td className="px-4 py-3.5 text-xs text-zinc-600 font-medium">{r.f_mes}</td>
-                        <td className="px-4 py-3.5 text-xs text-zinc-600 font-medium">{r.f_ano}</td>
-                        <td className="px-4 py-3.5 text-xs text-zinc-700 font-bold">{r.f_rz}</td>
-                        <td className="px-4 py-3.5 text-xs text-zinc-700 font-bold">{r.f_ul}</td>
-                        <td className="px-4 py-3.5 text-xs text-blue-600 font-black">{r.f_instalacao}</td>
-                        <td className="px-4 py-3.5 text-xs text-zinc-700 font-bold">{r.f_medidor}</td>
-                        <td className="px-4 py-3.5 text-xs text-zinc-600 font-medium">{r.f_reg}</td>
-                        <td className="px-4 py-3.5 text-xs text-zinc-600 font-medium">{r.f_matr}</td>
-                        <td className="px-4 py-3.5 text-xs text-zinc-900 font-black">{r.f_data}</td>
-                        <td className="px-4 py-3.5 text-xs text-zinc-900 font-black">{r.f_hora}</td>
-                        <td className="px-4 py-3.5 text-xs text-zinc-600 font-medium max-w-[200px] truncate" title={r.f_endereco}>{r.f_endereco}</td>
+                        <td className="px-3 py-3 text-[13px] text-zinc-600 font-medium whitespace-nowrap">{r.f_mes}</td>
+                        <td className="px-3 py-3 text-[13px] text-zinc-600 font-medium whitespace-nowrap">{r.f_ano}</td>
+                        <td className="px-3 py-3 text-[13px] text-zinc-700 font-bold whitespace-nowrap">{r.f_rz}</td>
+                        <td className="px-3 py-3 text-[13px] text-zinc-700 font-bold whitespace-nowrap">{r.f_ul}</td>
+                        <td className="px-3 py-3 text-[13px] text-blue-600 font-black whitespace-nowrap">{r.f_instalacao}</td>
+                        <td className="px-3 py-3 text-[13px] text-zinc-700 font-bold whitespace-nowrap">{r.f_medidor}</td>
+                        <td className="px-3 py-3 text-[13px] text-zinc-600 font-medium whitespace-nowrap">{r.f_reg}</td>
+                        <td className="px-3 py-3 text-[13px] text-zinc-600 font-medium whitespace-nowrap">{r.f_matr}</td>
+                        <td className="px-3 py-3 text-[13px] text-zinc-900 font-black whitespace-nowrap">{r.f_data}</td>
+                        <td className="px-3 py-3 text-[13px] text-zinc-900 font-black whitespace-nowrap">{r.f_hora}</td>
+                        <td className="px-3 py-3 text-[13px] text-zinc-600 font-medium whitespace-normal break-words min-w-[300px]">{r.f_endereco}</td>
                       </tr>
                     );
                   })}
