@@ -12,7 +12,8 @@ import {
   FileText,
   BarChart3,
   PieChart as PieChartIcon,
-  ChevronRight
+  ChevronRight,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -28,6 +29,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [hasGenerated, setHasGenerated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // Filter Options
   const [options, setOptions] = useState<{
@@ -110,6 +112,7 @@ export default function Dashboard() {
         return;
       }
       console.error('Erro ao buscar opções de filtros:', error);
+      setError('Erro ao carregar filtros: ' + (error.message || 'Verifique sua conexão com o banco de dados.'));
       
       // If everything fails and no cache, set some defaults to prevent crash
       if (!localStorage.getItem('sal_dashboard_filters')) {
@@ -128,6 +131,7 @@ export default function Dashboard() {
     
     setLoading(true);
     setLoadingChart(true);
+    setError(null);
     setResumo(null); // Reset previous data
     setLeiturasPorTipo([]); // Reset previous data
     
@@ -153,8 +157,9 @@ export default function Dashboard() {
       // Fetch Chart Data based on active tab
       await updateChartData(activeTab, Number(ano), String(mes), rz);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao gerar relatório:', error);
+      setError(error.message || 'Ocorreu um erro ao gerar o relatório. Verifique sua conexão com o banco de dados.');
     } finally {
       setLoading(false);
       setLoadingChart(false);
@@ -377,6 +382,26 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {error && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl flex items-center gap-3"
+        >
+          <AlertCircle className="w-5 h-5" />
+          <div className="flex-1">
+            <p className="text-sm font-bold uppercase tracking-wider mb-1">Erro de Consulta</p>
+            <p className="text-sm font-medium">{error}</p>
+          </div>
+          <button 
+            onClick={() => setError(null)}
+            className="p-1 hover:bg-red-100 rounded-lg transition-colors"
+          >
+            <XCircle className="w-4 h-4" />
+          </button>
+        </motion.div>
+      )}
 
       {!hasGenerated ? (
         <div className="h-[60vh] flex flex-col items-center justify-center text-center space-y-4 bg-white rounded-[32px] border border-zinc-100 shadow-sm">

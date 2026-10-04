@@ -65,6 +65,7 @@ export default function SequenciaLeitura() {
 
       if (filtersError) {
         console.error('Erro ao buscar filtros de sequência:', filtersError);
+        setError('Erro ao carregar filtros: ' + filtersError.message);
         setOptions({ anos: [], meses: [], matriculas: [] });
       } else {
         const anos = (filtersData || [])
@@ -85,8 +86,9 @@ export default function SequenciaLeitura() {
         
         if (anos.length > 0) setAno(anos[0]);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Erro ao buscar filtros:', e);
+      setError('Erro ao carregar filtros: ' + (e.message || 'Verifique sua conexão.'));
     } finally {
       setLoadingFilters(false);
     }
@@ -176,7 +178,7 @@ export default function SequenciaLeitura() {
       setHasGenerated(true);
     } catch (err: any) {
       console.error('Erro na consulta:', err);
-      setError('Ocorreu um erro ao realizar a consulta. Tente novamente.');
+      setError(err.message || 'Ocorreu um erro ao realizar a consulta. Tente novamente.');
     } finally {
       setLoading(false);
     }

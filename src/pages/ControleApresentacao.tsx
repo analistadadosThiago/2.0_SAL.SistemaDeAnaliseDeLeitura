@@ -99,8 +99,9 @@ export default function ControleApresentacao() {
         
         if (anos.length > 0) setAno(anos[0]);
       }
-    } catch (e) {
-      // Error handled silently as per optimization request
+    } catch (e: any) {
+      console.error('Erro ao buscar filtros:', e);
+      setError('Erro ao carregar filtros: ' + (e.message || 'Verifique sua conexão.'));
     } finally {
       setLoadingFilters(false);
     }
@@ -161,7 +162,7 @@ export default function ControleApresentacao() {
       setResults(allData);
       setHasGenerated(true);
     } catch (err: any) {
-      setError('Ocorreu um erro ao realizar a consulta. Tente novamente.');
+      setError(err.message || 'Ocorreu um erro ao realizar a consulta. Tente novamente.');
     } finally {
       setLoading(false);
     }

@@ -60,7 +60,7 @@ export default function Consulta() {
       setResults(data || []);
     } catch (err: any) {
       console.error('Erro na consulta:', err);
-      setError('Ocorreu um erro ao realizar a consulta. Tente novamente.');
+      setError(err.message || 'Ocorreu um erro ao realizar a consulta. Tente novamente.');
     } finally {
       setLoading(false);
     }
