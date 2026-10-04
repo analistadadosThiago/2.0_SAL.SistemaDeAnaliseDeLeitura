@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Chart from 'react-apexcharts';
 import { 
   Users, 
@@ -10,9 +10,12 @@ import {
   TrendingUp,
   Filter,
   BarChart3,
-  Database
+  Database,
+  AlertTriangle,
+  X,
+  Image as ImageIcon
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 import { ControleLeituristaData } from '../types';
@@ -48,6 +51,7 @@ export default function ControleLeiturista() {
   const [results, setResults] = useState<ControleLeituristaData[]>([]);
   const [activeTab, setActiveTab] = useState<'ul' | 'razao' | 'matricula'>('ul');
   const [currentPage, setCurrentPage] = useState(1);
+  const [showAlertModal, setShowAlertModal] = useState(false);
   const pageSize = 20;
 
   // 1. Fetch Filter Options
@@ -152,6 +156,7 @@ export default function ControleLeiturista() {
       
       setResults(processedData);
       setHasGenerated(true);
+      setShowAlertModal(true);
     } catch (err: any) {
       console.error('Erro na consulta:', err);
       setError('Ocorreu um erro ao realizar a consulta. Tente novamente.');
@@ -160,10 +165,37 @@ export default function ControleLeiturista() {
     }
   };
 
-  // 3. Grouping Logic
-  const groupedResults = (() => {
+  // Top impediments summary for the Alert Modal
+  const topImpedimentosColaboradores = useMemo(() => {
+    const grouped: { [key: string]: { razao: number; matr: string; impedimentos: number; leit_total: number; indicador: number } } = {};
+    results.forEach(r => {
+      const key = `${r.razao}-${r.matr}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          razao: r.razao,
+          matr: r.matr,
+          impedimentos: 0,
+          leit_total: 0,
+          indicador: 0
+        };
+      }
+      grouped[key].impedimentos += Number(r.impedimentos || 0);
+      grouped[key].leit_total += Number(r.leit_total || 0);
+    });
+
+    return Object.values(grouped)
+      .map(item => ({
+        ...item,
+        indicador: item.leit_total > 0 ? (item.impedimentos / item.leit_total) * 100 : 0
+      }))
+      .sort((a, b) => b.impedimentos - a.impedimentos)
+      .slice(0, 10);
+  }, [results]);
+
+  // 3. Grouping Logic - Rigorously sorted descending by impedimentos
+  const groupedResults = useMemo(() => {
     if (activeTab === 'ul') {
-      return [...results].sort((a, b) => b.indicador - a.indicador);
+      return [...results].sort((a, b) => Number(b.impedimentos || 0) - Number(a.impedimentos || 0));
     }
 
     const grouped: { [key: string]: ControleLeituristaData } = {};
@@ -193,8 +225,8 @@ export default function ControleLeiturista() {
     return Object.values(grouped).map(g => ({
       ...g,
       indicador: g.leit_total > 0 ? (g.impedimentos / g.leit_total) * 100 : 0
-    })).sort((a, b) => b.indicador - a.indicador);
-  })();
+    })).sort((a, b) => Number(b.impedimentos || 0) - Number(a.impedimentos || 0));
+  }, [results, activeTab]);
 
   // 4. Totals
   const totals = results.reduce((acc, curr) => {
@@ -279,7 +311,7 @@ export default function ControleLeiturista() {
       didParseCell: (data) => {
         if (data.section === 'body' && data.column.index === 10) {
           const val = parseFloat(data.cell.text[0].replace(',', '.'));
-          if (val > 0.51) {
+          if (val > 50.01) {
             data.cell.styles.fillColor = [254, 226, 226];
             data.cell.styles.textColor = [220, 38, 38];
             data.cell.styles.fontStyle = 'italic';
@@ -343,6 +375,205 @@ export default function ControleLeiturista() {
     const timeStr = now.toLocaleTimeString('pt-BR').replace(/:/g, '-');
     
     XLSX.writeFile(workbook, `SAL_Controle_Leiturista_${activeTab}_${dateStr}_${timeStr}.xlsx`);
+  };
+
+  // Export functions for the Alert Modal (PDF, EXCEL, Imagem .JPG)
+  const exportModalToPDF = () => {
+    const doc = new jsPDF('l', 'mm', 'a4');
+    const timestamp = new Date().toLocaleString('pt-BR');
+    
+    const tableColumn = ["#", "RAZÃO", "MATRÍCULA", "IMPEDIMENTOS", "LEIT. TOTAL", "INDICADOR (%)"];
+    
+    const tableRows = topImpedimentosColaboradores.map((colab, idx) => [
+      `${idx + 1}º`,
+      `RZ ${colab.razao}`,
+      colab.matr || '-',
+      colab.impedimentos.toLocaleString(),
+      colab.leit_total.toLocaleString(),
+      `${colab.indicador.toFixed(2).replace('.', ',')}%`
+    ]);
+
+    doc.setFontSize(13);
+    doc.setTextColor(153, 27, 27);
+    doc.text("ALERTA IMPORTANTE: Verifique com atenção os colaboradores com maior impedimento.", 14, 15);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Período: ${mes || ''}/${ano || ''} | Gerado em: ${timestamp}`, 14, 22);
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 28,
+      theme: 'grid',
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [185, 28, 28] },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+          const row = topImpedimentosColaboradores[data.row.index];
+          if (row && row.indicador > 50.01) {
+            data.cell.styles.fillColor = [254, 226, 226];
+            data.cell.styles.textColor = [153, 27, 27];
+          }
+        }
+      }
+    });
+
+    doc.save(`Alerta_Impedimentos_Leiturista_${new Date().getTime()}.pdf`);
+  };
+
+  const exportModalToExcel = () => {
+    const exportData = topImpedimentosColaboradores.map((colab, idx) => ({
+      "POSIÇÃO": `${idx + 1}º`,
+      "RAZÃO": colab.razao,
+      "MATRÍCULA": colab.matr || '',
+      "IMPEDIMENTOS": colab.impedimentos,
+      "LEIT. TOTAL": colab.leit_total,
+      "INDICADOR (%)": `${colab.indicador.toFixed(2).replace('.', ',')}%`
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Alerta_Impedimentos");
+    XLSX.writeFile(workbook, `Alerta_Impedimentos_Leiturista_${new Date().getTime()}.xlsx`);
+  };
+
+  const exportModalToJPEG = () => {
+    const canvas = document.createElement('canvas');
+    const width = 1200;
+    const headerHeight = 160;
+    const rowHeight = 44;
+    const tableHeaderHeight = 48;
+    const padding = 40;
+    const rows = topImpedimentosColaboradores;
+    const totalHeight = headerHeight + tableHeaderHeight + (rows.length * rowHeight) + padding + 60;
+
+    canvas.width = width;
+    canvas.height = Math.max(totalHeight, 400);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, canvas.height);
+
+    // Header Background banner
+    ctx.fillStyle = '#fef2f2';
+    ctx.fillRect(0, 0, width, headerHeight);
+
+    // Border line bottom of header
+    ctx.strokeStyle = '#fee2e2';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, headerHeight);
+    ctx.lineTo(width, headerHeight);
+    ctx.stroke();
+
+    // Alert Red Bar
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(40, 32, 8, 80);
+
+    // Title
+    ctx.font = 'bold 22px Inter, system-ui, sans-serif';
+    ctx.fillStyle = '#7f1d1d';
+    ctx.fillText('ALERTA IMPORTANTE: Verifique com atenção os colaboradores com maior impedimento.', 60, 58);
+
+    // Subtitle
+    ctx.font = '15px Inter, system-ui, sans-serif';
+    ctx.fillStyle = '#991b1b';
+    ctx.fillText(
+      `Período: ${mes || ''}/${ano || ''} | Razão & Matrícula com maiores quantidades de impedimentos | Gerado em: ${new Date().toLocaleString('pt-BR')}`,
+      60,
+      95
+    );
+
+    // Table Header
+    const tableTop = headerHeight + 24;
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(padding, tableTop, width - (padding * 2), tableHeaderHeight);
+
+    const cols = [
+      { title: '#', x: 60, align: 'left' as CanvasTextAlign },
+      { title: 'RAZÃO', x: 140, align: 'left' as CanvasTextAlign },
+      { title: 'MATRÍCULA', x: 300, align: 'left' as CanvasTextAlign },
+      { title: 'IMPEDIMENTOS', x: 620, align: 'right' as CanvasTextAlign },
+      { title: 'LEIT. TOTAL', x: 880, align: 'right' as CanvasTextAlign },
+      { title: 'INDICADOR (%)', x: 1140, align: 'right' as CanvasTextAlign },
+    ];
+
+    ctx.font = 'bold 13px Inter, system-ui, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    cols.forEach(col => {
+      ctx.textAlign = col.align;
+      ctx.fillText(col.title, col.x, tableTop + 30);
+    });
+
+    // Table Rows
+    let currentY = tableTop + tableHeaderHeight;
+    rows.forEach((colab, idx) => {
+      const isCritical = colab.indicador > 50.01;
+
+      // Row background
+      if (isCritical) {
+        ctx.fillStyle = '#fee2e2';
+      } else {
+        ctx.fillStyle = idx % 2 === 0 ? '#f8fafc' : '#ffffff';
+      }
+      ctx.fillRect(padding, currentY, width - (padding * 2), rowHeight);
+
+      // Bottom row border
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padding, currentY + rowHeight);
+      ctx.lineTo(width - padding, currentY + rowHeight);
+      ctx.stroke();
+
+      // Row texts
+      ctx.font = isCritical ? 'bold 14px Inter, system-ui, sans-serif' : '14px Inter, system-ui, sans-serif';
+      
+      // Index
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(`${idx + 1}º`, 60, currentY + 27);
+
+      // Razão
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(`RZ ${colab.razao}`, 140, currentY + 27);
+
+      // Matrícula
+      ctx.fillStyle = '#2563eb';
+      ctx.fillText(colab.matr || '-', 300, currentY + 27);
+
+      // Impedimentos
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#dc2626';
+      ctx.font = 'bold 14px Inter, system-ui, sans-serif';
+      ctx.fillText(colab.impedimentos.toLocaleString(), 620, currentY + 27);
+
+      // Leit. Total
+      ctx.fillStyle = '#334155';
+      ctx.font = isCritical ? 'bold 14px Inter, system-ui, sans-serif' : '14px Inter, system-ui, sans-serif';
+      ctx.fillText(colab.leit_total.toLocaleString(), 880, currentY + 27);
+
+      // Indicador (%)
+      ctx.fillStyle = isCritical ? '#991b1b' : '#0f172a';
+      ctx.fillText(`${colab.indicador.toFixed(2).replace('.', ',')}%`, 1140, currentY + 27);
+
+      currentY += rowHeight;
+    });
+
+    // Footer note
+    ctx.textAlign = 'left';
+    ctx.font = 'italic 12px Inter, system-ui, sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('* Registros destacados em vermelho claro representam Indicador superior a 50,01%.', padding, currentY + 32);
+
+    // Export as JPG / JPEG
+    const link = document.createElement('a');
+    link.download = `Alerta_Impedimentos_Leiturista_${new Date().getTime()}.jpg`;
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
   };
 
   // 7. Chart Data (Always grouped by Matrícula + Razão for the chart)
@@ -511,6 +742,133 @@ export default function ControleLeiturista() {
         </div>
       )}
 
+      {/* Modal / Popup de Alerta de Colaboradores com Maior Impedimento */}
+      <AnimatePresence>
+        {showAlertModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full border border-red-100 overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Header do Alerta */}
+              <div className="p-6 bg-red-50/80 border-b border-red-100 flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 bg-red-600 text-white rounded-2xl shadow-md shadow-red-200 mt-0.5">
+                    <AlertTriangle className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-red-900 tracking-tight leading-snug">
+                      ALERTA IMPORTANTE: Verifique com atenção os colaboradores com maior impedimento.
+                    </h3>
+                    <p className="text-xs text-red-700/80 mt-1 font-medium">
+                      Colaboradores e razões que acumulam as maiores quantidades de impedimentos no período selecionado.
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowAlertModal(false)}
+                  className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-xl transition-colors"
+                  title="Fechar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Opções de Exportação do Popup (PDF, EXCEL, Imagem .JPG) */}
+              <div className="px-6 py-3 bg-zinc-50/90 border-b border-zinc-100 flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                  Opções de Exportação do Alerta:
+                </span>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={exportModalToPDF}
+                    className="px-3 py-1.5 bg-white hover:bg-red-50 border border-zinc-200 hover:border-red-200 rounded-lg text-xs font-bold text-zinc-700 hover:text-red-700 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                    title="Exportar Alerta para PDF"
+                  >
+                    <Download className="w-3.5 h-3.5 text-red-600" />
+                    <span>PDF</span>
+                  </button>
+                  <button 
+                    onClick={exportModalToExcel}
+                    className="px-3 py-1.5 bg-white hover:bg-emerald-50 border border-zinc-200 hover:border-emerald-200 rounded-lg text-xs font-bold text-zinc-700 hover:text-emerald-700 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                    title="Exportar Alerta para EXCEL"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>EXCEL</span>
+                  </button>
+                  <button 
+                    onClick={exportModalToJPEG}
+                    className="px-3 py-1.5 bg-white hover:bg-blue-50 border border-zinc-200 hover:border-blue-200 rounded-lg text-xs font-bold text-zinc-700 hover:text-blue-700 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                    title="Exportar Alerta para Imagem (.JPG)"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Imagem (.JPG)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabela Resumida de Colaboradores com Maiores Impedimentos */}
+              <div className="p-6 overflow-y-auto flex-1">
+                <div className="overflow-x-auto rounded-2xl border border-zinc-100">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-zinc-50">
+                        <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">#</th>
+                        <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Razão</th>
+                        <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Matrícula</th>
+                        <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 text-right">Impedimentos</th>
+                        <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 text-right">Leit. Total</th>
+                        <th className="px-4 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100 text-right">Indicador (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 text-xs">
+                      {topImpedimentosColaboradores.map((colab, idx) => {
+                        const isHigh = colab.indicador > 50.01;
+                        return (
+                          <tr 
+                            key={`${colab.razao}-${colab.matr}-${idx}`}
+                            className={cn(
+                              "transition-colors",
+                              isHigh ? "bg-red-50/70 font-semibold" : "hover:bg-zinc-50"
+                            )}
+                          >
+                            <td className="px-4 py-3 text-zinc-400 font-bold">{idx + 1}º</td>
+                            <td className="px-4 py-3 font-bold text-zinc-900">RZ {colab.razao}</td>
+                            <td className="px-4 py-3 font-semibold text-blue-600">{colab.matr || '-'}</td>
+                            <td className="px-4 py-3 text-right font-black text-red-600">{colab.impedimentos.toLocaleString()}</td>
+                            <td className="px-4 py-3 text-right text-zinc-700">{colab.leit_total.toLocaleString()}</td>
+                            <td className="px-4 py-3 text-right font-bold">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-full text-[11px]",
+                                isHigh ? "bg-red-100 text-red-700" : "text-zinc-800"
+                              )}>
+                                {colab.indicador.toFixed(2).replace('.', ',')}%
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Botão de Fechar e Visualizar Completo */}
+              <div className="p-4 bg-zinc-50 border-t border-zinc-100 flex items-center justify-end gap-3">
+                <button 
+                  onClick={() => setShowAlertModal(false)}
+                  className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold px-6 py-2.5 rounded-xl transition-all shadow-md shadow-blue-100 text-sm flex items-center gap-2"
+                >
+                  <span>Visualizar Relatório Completo</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {!loading && hasGenerated && results.length > 0 && (
         <motion.div 
           initial={{ opacity: 0 }}
@@ -633,13 +991,15 @@ export default function ControleLeiturista() {
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
                   {paginatedResults.map((r, i) => {
-                    const isHighlighted = r.indicador > 0.51;
+                    const isHighlighted = r.indicador > 50.01;
                     return (
                       <tr 
                         key={i} 
                         className={cn(
-                          "hover:bg-zinc-50/50 transition-colors",
-                          isHighlighted && "bg-red-50 italic"
+                          "transition-colors",
+                          isHighlighted 
+                            ? "bg-red-100/70 hover:bg-red-100 text-red-950 font-medium" 
+                            : "hover:bg-zinc-50/50"
                         )}
                       >
                         <td className="px-4 py-3 text-xs font-medium text-zinc-600">{r.ano}</td>
