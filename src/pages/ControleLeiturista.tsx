@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { supabase } from '../lib/supabase';
+import { getAnos, getMeses, getMatriculas, getControleLeiturista } from '../lib/dadosGeraisService';
 import { ControleLeituristaData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -58,55 +58,31 @@ export default function ControleLeiturista() {
   const fetchFilterOptions = useCallback(async (retryCount = 0) => {
     setLoadingFilters(true);
     
-    let anos: number[] = [];
-    let meses: string[] = [];
-    let matriculas: string[] = [];
-
-    // Fetch Anos
     try {
-      const { data, error } = await supabase.rpc('dashboard_getanos');
-      if (error) throw error;
-      anos = (data as any[] || []).map(item => typeof item === 'object' ? item.ano : item).sort((a, b) => b - a);
+      const [anosRes, mesesRes, matrsRes] = await Promise.all([
+        getAnos(),
+        getMeses(),
+        getMatriculas()
+      ]);
+
+      const anos = (anosRes.data || []).map(item => item.ano);
+      const meses = (mesesRes.data || []).map(item => item.mes);
+      const matriculas = (matrsRes.data || []).map(item => item.matr);
+
+      setOptions({ anos, meses, matriculas });
+
+      if (anos.length > 0 && ano === null) setAno(Number(anos[0]));
+      if (meses.length > 0 && mes === null) setMes(String(meses[0]));
     } catch (e) {
-      console.error('Erro ao buscar anos:', e);
+      console.error('Erro ao carregar opções de filtros:', e);
+      setOptions({
+        anos: [],
+        meses: [],
+        matriculas: []
+      });
+    } finally {
+      setLoadingFilters(false);
     }
-
-    // Fetch Meses
-    try {
-      const { data, error } = await supabase.rpc('dashboard_getmeses');
-      if (error) throw error;
-      meses = (data as any[] || []).map(item => typeof item === 'object' ? item.mes : item);
-    } catch (e) {
-      console.error('Erro ao buscar meses:', e);
-    }
-
-    // Fetch Matriculas using RPC
-    try {
-      const { data, error } = await supabase.rpc('get_lista_matriculas');
-      if (error) throw error;
-      matriculas = (data as any[] || []).map(item => typeof item === 'object' ? item.matr : item).sort();
-    } catch (e) {
-      console.error('Erro ao buscar matrículas via RPC:', e);
-      // Fallback: If RPC fails (e.g. PGRST202), try a limited fetch from table
-      try {
-        const { data: fallbackData } = await supabase
-          .from('"LeituraGeral"')
-          .select('matr')
-          .limit(10000);
-        if (fallbackData) {
-          matriculas = [...new Set(fallbackData.map(item => item.matr))].sort();
-        }
-      } catch (fallbackErr) {
-        console.error('Fallback de matrículas falhou:', fallbackErr);
-      }
-    }
-
-    setOptions({ anos, meses, matriculas });
-
-    if (anos.length > 0 && ano === null) setAno(Number(anos[0]));
-    if (meses.length > 0 && mes === null) setMes(String(meses[0]));
-    
-    setLoadingFilters(false);
   }, [ano, mes]);
 
   useEffect(() => {
@@ -127,7 +103,7 @@ export default function ControleLeiturista() {
     setCurrentPage(1);
 
     try {
-      const { data, error: rpcError } = await supabase.rpc('get_controle_leiturista', {
+      const { data, error: serviceError } = await getControleLeiturista({
         p_ano: Number(ano),
         p_mes: String(mes),
         p_matr: matr || null,
@@ -135,12 +111,8 @@ export default function ControleLeiturista() {
         p_ul_para: ulPara ? Number(ulPara) : null
       });
 
-      if (rpcError) {
-        if (rpcError.code === '57014') {
-          setError('A busca demorou muito. Por favor, tente filtrar por um dado mais específico.');
-          return;
-        }
-        throw rpcError;
+      if (serviceError) {
+        throw serviceError;
       }
 
       if (!data || data.length === 0) {

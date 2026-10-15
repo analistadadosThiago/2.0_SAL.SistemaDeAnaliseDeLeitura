@@ -17,13 +17,17 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { supabase } from '../lib/supabase';
+import { 
+  getAnos, 
+  getMeses, 
+  getRazoes, 
+  getDashboardResumo, 
+  getDashboardLeiturasPorTipo, 
+  getDashboardChartPorRazao, 
+  getDashboardChartPorMes, 
+  getDashboardChartPorAno 
+} from '../lib/dadosGeraisService';
 import { DashboardResumo, DashboardLeituraTipo, DashboardFiltros } from '../types';
-
-const MONTHS_LIST = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-];
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(false);
@@ -64,62 +68,34 @@ export default function Dashboard() {
   });
   const [loadingChart, setLoadingChart] = useState(false);
 
-  // 1. Fetch Filter Options with Sequential Loading, Caching, and Retry Logic
-  const fetchFilterOptions = useCallback(async (retryCount = 0) => {
-    // Try to load from cache first
-    const cachedFilters = localStorage.getItem('sal_dashboard_filters');
-    if (cachedFilters && !retryCount) {
-      try {
-        const parsed = JSON.parse(cachedFilters);
-        setOptions(parsed);
-        if (parsed.anos.length > 0 && ano === null) setAno(Number(parsed.anos[0]));
-        if (parsed.meses.length > 0 && mes === null) setMes(String(parsed.meses[0]));
-        setLoadingFilters(false);
-      } catch (e) {
-        console.error('Erro ao carregar cache de filtros:', e);
-      }
-    }
-
+  // 1. Fetch Filter Options with Direct Table Query
+  const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
-    try {
-      // Sequential loading to avoid timeouts
-      const anosRes = await supabase.rpc('dashboard_getanos');
-      if (anosRes.error) throw anosRes.error;
-      
-      const mesesRes = await supabase.rpc('dashboard_getmeses');
-      if (mesesRes.error) throw mesesRes.error;
-      
-      const razoesRes = await supabase.rpc('dashboard_getrazoes');
-      if (razoesRes.error) throw razoesRes.error;
 
-      const anos = (anosRes.data as any[] || []).map(item => typeof item === 'object' ? item.ano : item).sort((a, b) => b - a);
-      const meses = (mesesRes.data as any[] || []).map(item => typeof item === 'object' ? item.mes : item);
-      const razoes = (razoesRes.data as any[] || []).map(item => typeof item === 'object' ? item.rz : item).sort((a, b) => a - b);
+    try {
+      const [anosRes, mesesRes, razoesRes] = await Promise.all([
+        getAnos(),
+        getMeses(),
+        getRazoes()
+      ]);
+
+      const anos = (anosRes.data || []).map(item => item.ano);
+      const meses = (mesesRes.data || []).map(item => item.mes);
+      const razoes = (razoesRes.data || []).map(item => item.rz);
 
       const newOptions = { anos, meses, razoes };
       setOptions(newOptions);
-      
-      // Save to cache
-      localStorage.setItem('sal_dashboard_filters', JSON.stringify(newOptions));
 
-      if (anos.length > 0 && ano === null) setAno(Number(anos[0]));
-      if (meses.length > 0 && mes === null) setMes(String(meses[0]));
+      if (anos.length > 0 && (ano === null || !anos.includes(Number(ano)))) {
+        setAno(Number(anos[0]));
+      }
+      if (meses.length > 0 && (mes === null || !meses.includes(String(mes)))) {
+        setMes(String(meses[0]));
+      }
+      setError(null);
     } catch (error: any) {
-      // Silent retry for timeouts (57014) or fetch errors
-      const isTimeout = error.code === '57014' || error.message?.includes('Failed to fetch');
-      if (isTimeout && retryCount < 2) {
-        setTimeout(() => fetchFilterOptions(retryCount + 1), 2000);
-        return;
-      }
-      console.error('Erro ao buscar opções de filtros:', error);
-      setError('Erro ao carregar filtros: ' + (error.message || 'Verifique sua conexão com o banco de dados.'));
-      
-      // If everything fails and no cache, set some defaults to prevent crash
-      if (!localStorage.getItem('sal_dashboard_filters')) {
-        const currentYear = new Date().getFullYear();
-        setOptions(prev => ({ ...prev, anos: [currentYear] }));
-        setAno(currentYear);
-      }
+      console.error('Erro ao carregar filtros dinâmicos:', error);
+      setError('Erro ao carregar opções de filtros da tabela DadosGerais.');
     } finally {
       setLoadingFilters(false);
     }
@@ -136,15 +112,9 @@ export default function Dashboard() {
     setLeiturasPorTipo([]); // Reset previous data
     
     try {
-      const params = {
-        p_ano: Number(ano),
-        p_mes: String(mes),
-        p_rz: rz !== null ? Number(rz) : null
-      };
-
       const [resumoRes, tipoRes] = await Promise.all([
-        supabase.rpc('dashboard_resumogeral', params),
-        supabase.rpc('dashboard_leiturasportipo', params)
+        getDashboardResumo(Number(ano), String(mes), rz !== null ? Number(rz) : null),
+        getDashboardLeiturasPorTipo(Number(ano), String(mes), rz !== null ? Number(rz) : null)
       ]);
 
       if (resumoRes.error) throw resumoRes.error;
@@ -172,48 +142,13 @@ export default function Dashboard() {
       let results: (DashboardResumo & { label: string })[] = [];
 
       if (tab === 'razao') {
-        const rawResults = await Promise.all(
-          options.razoes.map(async (r) => {
-            const { data } = await supabase.rpc('dashboard_resumogeral', {
-              p_ano: currentAno,
-              p_mes: currentMes,
-              p_rz: r
-            });
-            const res = data?.[0] || { leituras_nao_realizadas: 0, leituras_realizadas: 0, percentual_impedimento: 0, leituras_a_realizar: 0 };
-            return { ...res, label: `RZ ${r}` };
-          })
-        );
-        results = rawResults;
+        results = await getDashboardChartPorRazao(currentAno, currentMes, options.razoes);
       } else if (tab === 'mes') {
-        // Aba Mês: Histórico de Janeiro até o mês selecionado
-        const selectedMonthIndex = MONTHS_LIST.indexOf(currentMes);
-        const monthsToFetch = selectedMonthIndex !== -1 ? MONTHS_LIST.slice(0, selectedMonthIndex + 1) : [currentMes];
-        
-        const rawResults = await Promise.all(
-          monthsToFetch.map(async (m) => {
-            const { data } = await supabase.rpc('dashboard_resumogeral', {
-              p_ano: currentAno,
-              p_mes: m,
-              p_rz: currentRz
-            });
-            const res = data?.[0] || { leituras_nao_realizadas: 0, leituras_realizadas: 0, percentual_impedimento: 0, leituras_a_realizar: 0 };
-            return { ...res, label: m };
-          })
-        );
-        results = rawResults;
+        const monthsToFetch = options.meses.length > 0 ? options.meses : [currentMes];
+        results = await getDashboardChartPorMes(currentAno, monthsToFetch, currentRz);
       } else if (tab === 'ano') {
-        const rawResults = await Promise.all(
-          options.anos.map(async (y) => {
-            const { data } = await supabase.rpc('dashboard_resumogeral', {
-              p_ano: y,
-              p_mes: currentMes,
-              p_rz: currentRz
-            });
-            const res = data?.[0] || { leituras_nao_realizadas: 0, leituras_realizadas: 0, percentual_impedimento: 0, leituras_a_realizar: 0 };
-            return { ...res, label: y.toString() };
-          })
-        );
-        results = rawResults.reverse();
+        results = await getDashboardChartPorAno(options.anos, currentMes, currentRz);
+        results = results.reverse();
       }
 
       // Sort descending by impediments (leituras_nao_realizadas)

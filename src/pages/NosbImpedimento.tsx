@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { supabase } from '../lib/supabase';
+import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosNosb, getNosbImpedimento } from '../lib/dadosGeraisService';
 import { NosbImpedimentoData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -59,61 +59,32 @@ export default function NosbImpedimento() {
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
     try {
-      const { data: filtersData, error: filtersError } = await supabase.rpc('get_filtros_nosb');
+      const [anosRes, mesesRes, razoesRes, matrsRes, motivosRes] = await Promise.all([
+        getAnos(),
+        getMeses(),
+        getRazoes(),
+        getMatriculas(),
+        getMotivosNosb()
+      ]);
 
-      if (filtersError) {
-        // Fallback to individual calls if get_filtros_nosb doesn't exist
-        const { data: anosData } = await supabase.rpc('dashboard_getanos');
-        const { data: mesesData } = await supabase.rpc('dashboard_getmeses');
-        const { data: razoesData } = await supabase.rpc('dashboard_getrazoes');
-        const { data: matrData } = await supabase.rpc('get_lista_matriculas');
-        const { data: motivosData } = await supabase.rpc('get_lista_motivos_nosb');
+      const anos = (anosRes.data || []).map(item => String(item.ano));
+      const meses = (mesesRes.data || []).map(item => item.mes);
+      const razoes = (razoesRes.data || []).map(item => String(item.rz));
+      const matriculas = (matrsRes.data || []).map(item => item.matr);
+      const motivos = (motivosRes.data || []).map(item => item.motivo);
 
-        const anos = (anosData || []).map((item: any) => String(typeof item === 'object' ? item.ano : item)).sort((a: string, b: string) => Number(b) - Number(a));
-        const meses = (mesesData || []).map((item: any) => String(typeof item === 'object' ? item.mes : item));
-        const razoes = (razoesData || []).map((item: any) => String(typeof item === 'object' ? item.rz : item)).sort((a: string, b: string) => Number(a) - Number(b));
-        const matriculas = (matrData || []).map((item: any) => String(typeof item === 'object' ? item.matr : item)).sort();
-        const motivos = (motivosData || [])
-          .map((item: any) => String(typeof item === 'object' ? item.motivo : item))
-          .filter((m: string) => m !== 'Faturada')
-          .sort();
-
-        setOptions({ anos, meses, razoes, matriculas, motivos });
-        if (anos.length > 0) setAno(anos[0]);
-        if (meses.length > 0) setMes(meses[0]);
-      } else {
-        const anos = (filtersData || [])
-          .filter((f: any) => f.coluna === 'ano')
-          .map((f: any) => String(f.valor))
-          .sort((a: string, b: string) => Number(b) - Number(a));
-        
-        const meses = (filtersData || [])
-          .filter((f: any) => f.coluna === 'mes')
-          .map((f: any) => String(f.valor));
-
-        const razoes = (filtersData || [])
-          .filter((f: any) => f.coluna === 'rz')
-          .map((f: any) => String(f.valor))
-          .sort((a: string, b: string) => Number(a) - Number(b));
-
-        const matriculas = (filtersData || [])
-          .filter((f: any) => f.coluna === 'matr')
-          .map((f: any) => String(f.valor))
-          .sort();
-
-        const motivos = (filtersData || [])
-          .filter((f: any) => f.coluna === 'motivo')
-          .map((f: any) => String(f.valor))
-          .filter((m: string) => m !== 'Faturada')
-          .sort();
-
-        setOptions({ anos, meses, razoes, matriculas, motivos });
-        
-        if (anos.length > 0) setAno(anos[0]);
-        if (meses.length > 0) setMes(meses[0]);
-      }
+      setOptions({ anos, meses, razoes, matriculas, motivos });
+      if (anos.length > 0) setAno(anos[0]);
+      if (meses.length > 0) setMes(meses[0]);
     } catch (e) {
       console.error('Erro ao buscar filtros:', e);
+      setOptions({
+        anos: [],
+        meses: [],
+        razoes: [],
+        matriculas: [],
+        motivos: []
+      });
     } finally {
       setLoadingFilters(false);
     }
@@ -132,15 +103,15 @@ export default function NosbImpedimento() {
     setCurrentPage(1);
 
     try {
-      const { data, error: rpcError } = await supabase.rpc('get_nosb_impedimento', {
-        p_ano: ano || "",
-        p_mes: mes || "",
-        p_rz: razao || "",
-        p_matr: matr || "",
-        p_motivo: motivo || ""
+      const { data, error: serviceError } = await getNosbImpedimento({
+        p_ano: Number(ano) || 2026,
+        p_mes: mes || "Outubro",
+        p_rz: razao ? Number(razao) : null,
+        p_matr: matr || null,
+        p_motivo: motivo || null
       });
 
-      if (rpcError) throw rpcError;
+      if (serviceError) throw serviceError;
 
       if (!data || data.length === 0) {
         setError('Nenhum dado encontrado para os filtros informados.');

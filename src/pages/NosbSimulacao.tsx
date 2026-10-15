@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { supabase } from '../lib/supabase';
+import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosNosb, getNosbSimulacao } from '../lib/dadosGeraisService';
 import { NosbSimulacaoData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -58,45 +58,32 @@ export default function NosbSimulacao() {
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
     try {
-      const { data: filtersData, error: filtersError } = await supabase.rpc('get_filtros_nosb_simulacao');
+      const [anosRes, mesesRes, razoesRes, matrsRes, motivosRes] = await Promise.all([
+        getAnos(),
+        getMeses(),
+        getRazoes(),
+        getMatriculas(),
+        getMotivosNosb()
+      ]);
 
-      if (filtersError) {
-        console.error('Erro ao buscar filtros de simulação:', filtersError);
-        // Fallback or empty options
-        setOptions({ anos: [], meses: [], razoes: [], matriculas: [], motivos: [] });
-      } else {
-        const anos = (filtersData || [])
-          .filter((f: any) => f.coluna === 'ano')
-          .map((f: any) => String(f.valor))
-          .sort((a: string, b: string) => Number(b) - Number(a));
-        
-        const meses = (filtersData || [])
-          .filter((f: any) => f.coluna === 'mes')
-          .map((f: any) => String(f.valor));
+      const anos = (anosRes.data || []).map(item => String(item.ano));
+      const meses = (mesesRes.data || []).map(item => item.mes);
+      const razoes = (razoesRes.data || []).map(item => String(item.rz));
+      const matriculas = (matrsRes.data || []).map(item => item.matr);
+      const motivos = (motivosRes.data || []).map(item => item.motivo);
 
-        const razoes = (filtersData || [])
-          .filter((f: any) => f.coluna === 'rz')
-          .map((f: any) => String(f.valor))
-          .sort((a: string, b: string) => Number(a) - Number(b));
-
-        const matriculas = (filtersData || [])
-          .filter((f: any) => f.coluna === 'matr')
-          .map((f: any) => String(f.valor))
-          .sort();
-
-        const motivos = (filtersData || [])
-          .filter((f: any) => f.coluna === 'motivo')
-          .map((f: any) => String(f.valor))
-          .filter((m: string) => m !== 'Faturada')
-          .sort();
-
-        setOptions({ anos, meses, razoes, matriculas, motivos });
-        
-        if (anos.length > 0) setAno(anos[0]);
-        if (meses.length > 0) setMes(meses[0]);
-      }
+      setOptions({ anos, meses, razoes, matriculas, motivos });
+      if (anos.length > 0) setAno(anos[0]);
+      if (meses.length > 0) setMes(meses[0]);
     } catch (e) {
       console.error('Erro ao buscar filtros:', e);
+      setOptions({
+        anos: [],
+        meses: [],
+        razoes: [],
+        matriculas: [],
+        motivos: []
+      });
     } finally {
       setLoadingFilters(false);
     }
@@ -116,38 +103,18 @@ export default function NosbSimulacao() {
     setFetchProgress(0);
 
     try {
-      let allData: any[] = [];
-      let start = 0;
-      let end = 999;
-      let hasMore = true;
+      const { data, error: serviceError } = await getNosbSimulacao({
+        p_ano: Number(ano) || 2026,
+        p_mes: mes || "Outubro",
+        p_rz: razao ? Number(razao) : null,
+        p_matr: matr || null,
+        p_motivo: motivo || null
+      });
 
-      while (hasMore) {
-        const { data, error: rpcError } = await supabase
-          .rpc('get_nosb_simulacao', {
-            p_ano: String(ano || ""),
-            p_mes: String(mes || ""),
-            p_rz: String(razao || ""),
-            p_matr: String(matr || ""),
-            p_motivo: String(motivo || "")
-          })
-          .range(start, end);
+      if (serviceError) throw serviceError;
 
-        if (rpcError) throw rpcError;
-
-        if (!data || data.length === 0) {
-          hasMore = false;
-        } else {
-          allData = [...allData, ...data];
-          setFetchProgress(allData.length);
-          
-          if (data.length < 1000) {
-            hasMore = false;
-          } else {
-            start += 1000;
-            end += 1000;
-          }
-        }
-      }
+      const allData = data || [];
+      setFetchProgress(allData.length);
 
       if (allData.length === 0) {
         setError('Nenhum dado encontrado para os filtros informados.');

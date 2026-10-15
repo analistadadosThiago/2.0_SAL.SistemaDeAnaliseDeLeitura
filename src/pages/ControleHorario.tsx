@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { supabase } from '../lib/supabase';
+import { getAnos, getMeses, getMatriculas, getControleHorario } from '../lib/dadosGeraisService';
 import { ControleHorarioData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -67,33 +67,26 @@ export default function ControleHorario() {
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
     try {
-      const { data: filtersData, error: filtersError } = await supabase.rpc('get_filtros_horario');
+      const [anosRes, mesesRes, matrsRes] = await Promise.all([
+        getAnos(),
+        getMeses(),
+        getMatriculas()
+      ]);
 
-      if (filtersError) {
-        console.error('Erro ao buscar filtros de horário:', filtersError);
-        setOptions({ anos: [], meses: [], matriculas: [] });
-      } else {
-        const anos = (filtersData || [])
-          .filter((f: any) => f.coluna === 'ano')
-          .map((f: any) => String(f.valor))
-          .sort((a: string, b: string) => Number(b) - Number(a));
-        
-        const meses = (filtersData || [])
-          .filter((f: any) => f.coluna === 'mes')
-          .map((f: any) => String(f.valor));
+      const anos = (anosRes.data || []).map(item => String(item.ano));
+      const meses = (mesesRes.data || []).map(item => item.mes);
+      const matriculas = (matrsRes.data || []).map(item => item.matr);
 
-        const matriculas = (filtersData || [])
-          .filter((f: any) => f.coluna === 'matr')
-          .map((f: any) => String(f.valor))
-          .sort();
-
-        setOptions({ anos, meses, matriculas });
-        
-        if (anos.length > 0) setAno(anos[0]);
-        if (meses.length > 0) setMes(meses[0]);
-      }
+      setOptions({ anos, meses, matriculas });
+      if (anos.length > 0) setAno(anos[0]);
+      if (meses.length > 0) setMes(meses[0]);
     } catch (e) {
       console.error('Erro ao buscar filtros:', e);
+      setOptions({
+        anos: [],
+        meses: [],
+        matriculas: []
+      });
     } finally {
       setLoadingFilters(false);
     }
@@ -113,36 +106,21 @@ export default function ControleHorario() {
     setFetchProgress(0);
 
     try {
-      let allData: any[] = [];
-      let start = 0;
-      let end = 999;
-      let hasMore = true;
+      const { data, error: serviceError } = await getControleHorario({
+        p_ano: Number(ano) || 2026,
+        p_mes: mes || "Outubro",
+        p_matr: matr || null,
+        p_data: dataSel || null
+      });
 
-      while (hasMore) {
-        const { data, error: rpcError } = await supabase
-          .rpc('get_controle_horario', {
-            p_ano: String(ano || ""),
-            p_mes: String(mes || ""),
-            p_matr: String(matr || ""),
-            p_data: String(dataSel || "")
-          })
-          .range(start, end);
+      if (serviceError) throw serviceError;
 
-        if (rpcError) throw rpcError;
+      const allData = data || [];
+      setFetchProgress(allData.length);
 
-        if (!data || data.length === 0) {
-          hasMore = false;
-        } else {
-          allData = [...allData, ...data];
-          setFetchProgress(allData.length);
-          
-          if (data.length < 1000) {
-            hasMore = false;
-          } else {
-            start += 1000;
-            end += 1000;
-          }
-        }
+      if (allData.length === 0) {
+        setError('Nenhum dado encontrado para os filtros informados.');
+        return;
       }
 
       if (allData.length === 0) {

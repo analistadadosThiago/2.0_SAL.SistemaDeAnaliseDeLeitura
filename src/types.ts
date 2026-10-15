@@ -51,7 +51,7 @@ export interface ConsultaLeitura {
   mes: string;
   ano: number;
   ul: string;
-  instalacao_res: number;
+  instalacao_res: number | string;
   medidor_res: string;
   reg: string;
   matr: string;

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { supabase } from '../lib/supabase';
+import { consultaLeituras } from '../lib/dadosGeraisService';
 import { ConsultaLeitura } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -39,17 +39,13 @@ export default function Consulta() {
     setResults([]); // Clear previous results
     
     try {
-      const { data, error: rpcError } = await supabase.rpc('consulta_leituras', {
-        p_instalacao: instalacao.trim() ? Number(instalacao) : null,
+      const { data, error: serviceError } = await consultaLeituras({
+        p_instalacao: instalacao.trim() || null,
         p_medidor: medidor.trim() || null
       });
 
-      if (rpcError) {
-        if (rpcError.code === '57014') {
-          setError('A busca demorou muito. Por favor, tente filtrar por um dado mais específico.');
-          return;
-        }
-        throw rpcError;
+      if (serviceError) {
+        throw serviceError;
       }
 
       if (!data || data.length === 0) {
@@ -233,9 +229,9 @@ export default function Consulta() {
             <input 
               type="text"
               value={instalacao}
-              onChange={(e) => setInstalacao(e.target.value.replace(/\D/g, '').slice(0, 10))}
-              placeholder="Ex: 123456"
-              className="text-sm border-zinc-200 focus:ring-emerald-500 focus:border-emerald-500 bg-zinc-50 rounded-xl px-4 py-2 font-semibold text-zinc-700 w-40 transition-all"
+              onChange={(e) => setInstalacao(e.target.value)}
+              placeholder="Ex: 42.335.018-07"
+              className="text-sm border-zinc-200 focus:ring-emerald-500 focus:border-emerald-500 bg-zinc-50 rounded-xl px-4 py-2 font-semibold text-zinc-700 w-44 transition-all"
             />
           </div>
 

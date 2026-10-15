@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { supabase } from '../lib/supabase';
+import { getAnos, getMeses, getMatriculas, getSequenciaLeitura } from '../lib/dadosGeraisService';
 import { SequenciaLeituraData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -59,36 +59,26 @@ export default function SequenciaLeitura() {
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
     try {
-      // Assuming a similar RPC exists or using a generic one if possible
-      // If get_filtros_sequencia_leitura doesn't exist, we might need to handle it
-      const { data: filtersData, error: filtersError } = await supabase.rpc('get_filtros_sequencia_leitura');
+      const [anosRes, mesesRes, matrsRes] = await Promise.all([
+        getAnos(),
+        getMeses(),
+        getMatriculas()
+      ]);
 
-      if (filtersError) {
-        console.error('Erro ao buscar filtros de sequência:', filtersError);
-        setError('Erro ao carregar filtros: ' + filtersError.message);
-        setOptions({ anos: [], meses: [], matriculas: [] });
-      } else {
-        const anos = (filtersData || [])
-          .filter((f: any) => f.coluna === 'ano')
-          .map((f: any) => String(f.valor))
-          .sort((a: string, b: string) => Number(b) - Number(a));
-        
-        const meses = (filtersData || [])
-          .filter((f: any) => f.coluna === 'mes')
-          .map((f: any) => String(f.valor));
+      const anos = (anosRes.data || []).map(item => String(item.ano));
+      const meses = (mesesRes.data || []).map(item => item.mes);
+      const matriculas = (matrsRes.data || []).map(item => item.matr);
 
-        const matriculas = (filtersData || [])
-          .filter((f: any) => f.coluna === 'matr')
-          .map((f: any) => String(f.valor))
-          .sort();
-
-        setOptions({ anos, meses, matriculas });
-        
-        if (anos.length > 0) setAno(anos[0]);
-      }
+      setOptions({ anos, meses, matriculas });
+      if (anos.length > 0) setAno(anos[0]);
+      if (meses.length > 0) setMesSel(meses[0]);
     } catch (e: any) {
       console.error('Erro ao buscar filtros:', e);
-      setError('Erro ao carregar filtros: ' + (e.message || 'Verifique sua conexão.'));
+      setOptions({
+        anos: [],
+        meses: [],
+        matriculas: []
+      });
     } finally {
       setLoadingFilters(false);
     }
@@ -114,38 +104,18 @@ export default function SequenciaLeitura() {
     setHighlightedIndex(null);
 
     try {
-      let allData: any[] = [];
-      let start = 0;
-      let end = 999;
-      let hasMore = true;
+      const { data, error: serviceError } = await getSequenciaLeitura({
+        p_ano: Number(ano) || 2026,
+        p_mes: mesSel || "Outubro",
+        p_matr: matr || null,
+        p_ul_de: ulDe ? Number(ulDe) : null,
+        p_ul_para: ulPara ? Number(ulPara) : null
+      });
 
-      while (hasMore) {
-        const { data, error: rpcError } = await supabase
-          .rpc('get_sequencia_leitura', {
-            p_ano: String(ano || ""),
-            p_mes: String(mesSel || ""), // Changed to single month
-            p_matr: String(matr || ""),
-            p_ul_de: ulDe ? Number(ulDe) : null,
-            p_ul_para: ulPara ? Number(ulPara) : null
-          })
-          .range(start, end);
+      if (serviceError) throw serviceError;
 
-        if (rpcError) throw rpcError;
-
-        if (!data || data.length === 0) {
-          hasMore = false;
-        } else {
-          allData = [...allData, ...data];
-          setFetchProgress(allData.length);
-          
-          if (data.length < 1000) {
-            hasMore = false;
-          } else {
-            start += 1000;
-            end += 1000;
-          }
-        }
-      }
+      const allData = data || [];
+      setFetchProgress(allData.length);
 
       if (allData.length === 0) {
         setError('Nenhum dado encontrado para os filtros informados.');

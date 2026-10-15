@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { supabase } from '../lib/supabase';
+import { getAnos, getMeses, getMatriculas, getControleEvidencias } from '../lib/dadosGeraisService';
 import { ControleEvidenciasData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -60,33 +60,26 @@ export default function ControleEvidencias() {
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
     try {
-      // Using a general filter RPC if available, or fallback to distinct selects
-      const { data: filtersData, error: filtersError } = await supabase.rpc('get_filtros_geral');
-      
-      if (filtersError) {
-        // Fallback to individual calls if get_filtros_geral doesn't exist
-        const { data: anosData } = await supabase.rpc('dashboard_getanos');
-        const { data: mesesData } = await supabase.rpc('dashboard_getmeses');
-        const { data: matrData } = await supabase.rpc('get_lista_matriculas');
+      const [anosRes, mesesRes, matrsRes] = await Promise.all([
+        getAnos(),
+        getMeses(),
+        getMatriculas()
+      ]);
 
-        const anos = (anosData || []).map((item: any) => typeof item === 'object' ? item.ano : item).sort((a: number, b: number) => b - a);
-        const meses = (mesesData || []).map((item: any) => typeof item === 'object' ? item.mes : item);
-        const matriculas = (matrData || []).map((item: any) => typeof item === 'object' ? item.matr : item).sort();
+      const anos = (anosRes.data || []).map(item => item.ano);
+      const meses = (mesesRes.data || []).map(item => item.mes);
+      const matriculas = (matrsRes.data || []).map(item => item.matr);
 
-        setOptions({ anos, meses, matriculas });
-        if (anos.length > 0) setAno(Number(anos[0]));
-        if (meses.length > 0) setMes(String(meses[0]));
-      } else {
-        const anos = (filtersData?.anos || []).map((item: any) => typeof item === 'object' ? item.ano : item).sort((a: number, b: number) => b - a);
-        const meses = (filtersData?.meses || []).map((item: any) => typeof item === 'object' ? item.mes : item);
-        const matriculas = (filtersData?.matriculas || []).map((item: any) => typeof item === 'object' ? item.matr : item).sort();
-
-        setOptions({ anos, meses, matriculas });
-        if (anos.length > 0) setAno(Number(anos[0]));
-        if (meses.length > 0) setMes(String(meses[0]));
-      }
+      setOptions({ anos, meses, matriculas });
+      if (anos.length > 0) setAno(Number(anos[0]));
+      if (meses.length > 0) setMes(String(meses[0]));
     } catch (e) {
       console.error('Erro ao buscar filtros:', e);
+      setOptions({
+        anos: [],
+        meses: [],
+        matriculas: []
+      });
     } finally {
       setLoadingFilters(false);
     }
@@ -110,7 +103,7 @@ export default function ControleEvidencias() {
     setCurrentPage(1);
 
     try {
-      const { data, error: rpcError } = await supabase.rpc('get_controle_evidencias', {
+      const { data, error: serviceError } = await getControleEvidencias({
         p_ano: Number(ano),
         p_mes: String(mes),
         p_matr: matr || '',
@@ -118,7 +111,7 @@ export default function ControleEvidencias() {
         p_ul_para: ulPara ? Number(ulPara) : null
       });
 
-      if (rpcError) throw rpcError;
+      if (serviceError) throw serviceError;
 
       if (!data || data.length === 0) {
         setError('Nenhum dado encontrado para os filtros informados.');

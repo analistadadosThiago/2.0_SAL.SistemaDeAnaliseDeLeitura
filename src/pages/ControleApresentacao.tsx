@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { supabase } from '../lib/supabase';
+import { getAnos, getMeses, getRazoes, getMatriculas, getDadosApresentacao } from '../lib/dadosGeraisService';
 import { ApresentacaoData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -66,42 +66,31 @@ export default function ControleApresentacao() {
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
     try {
-      const { data: filtersData, error: filtersError } = await supabase.rpc('get_filtros_apresentacao');
+      const [anosRes, mesesRes, razoesRes, matrsRes] = await Promise.all([
+        getAnos(),
+        getMeses(),
+        getRazoes(),
+        getMatriculas()
+      ]);
 
-      if (filtersError) {
-        setOptions({ anos: [], meses: [], razoes: [], matriculas: [], motivos: [] });
-      } else {
-        const anos = (filtersData || [])
-          .filter((f: any) => f.coluna === 'ano')
-          .map((f: any) => String(f.valor))
-          .sort((a: string, b: string) => Number(b) - Number(a));
-        
-        const meses = (filtersData || [])
-          .filter((f: any) => f.coluna === 'mes')
-          .map((f: any) => String(f.valor));
+      const anos = (anosRes.data || []).map(item => String(item.ano));
+      const meses = (mesesRes.data || []).map(item => item.mes);
+      const razoes = (razoesRes.data || []).map(item => String(item.rz));
+      const matriculas = (matrsRes.data || []).map(item => item.matr);
+      const motivos = ['00', '01', '02', '03', '04', '05'];
 
-        const razoes = (filtersData || [])
-          .filter((f: any) => f.coluna === 'rz')
-          .map((f: any) => String(f.valor))
-          .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
-
-        const matriculas = (filtersData || [])
-          .filter((f: any) => f.coluna === 'matr')
-          .map((f: any) => String(f.valor))
-          .sort();
-
-        const motivos = (filtersData || [])
-          .filter((f: any) => f.coluna === 'cna')
-          .map((f: any) => String(f.valor))
-          .sort();
-
-        setOptions({ anos, meses, razoes, matriculas, motivos });
-        
-        if (anos.length > 0) setAno(anos[0]);
-      }
+      setOptions({ anos, meses, razoes, matriculas, motivos });
+      if (anos.length > 0) setAno(anos[0]);
+      if (meses.length > 0) setMes(meses[0]);
     } catch (e: any) {
       console.error('Erro ao buscar filtros:', e);
-      setError('Erro ao carregar filtros: ' + (e.message || 'Verifique sua conexão.'));
+      setOptions({
+        anos: [],
+        meses: [],
+        razoes: [],
+        matriculas: [],
+        motivos: []
+      });
     } finally {
       setLoadingFilters(false);
     }
@@ -121,37 +110,22 @@ export default function ControleApresentacao() {
     setFetchProgress(0);
 
     try {
-      let allData: any[] = [];
-      let start = 0;
-      let end = 999;
-      let hasMore = true;
+      const { data, error: serviceError } = await getDadosApresentacao({
+        p_ano: Number(ano) || 2026,
+        p_mes: mes || "Outubro",
+        p_rz: razao ? Number(razao) : null,
+        p_matr: matr || null,
+        p_cna: motivo || null
+      });
 
-      while (hasMore) {
-        const { data, error: rpcError } = await supabase
-          .rpc('get_dados_apresentacao', {
-            p_ano: String(ano || ''),
-            p_mes: String(mes || ''),
-            p_rz: String(razao || ''),
-            p_matr: String(matr || ''),
-            p_cna: String(motivo || '')
-          })
-          .range(start, end);
+      if (serviceError) throw serviceError;
 
-        if (rpcError) throw rpcError;
+      const allData = data || [];
+      setFetchProgress(allData.length);
 
-        if (!data || data.length === 0) {
-          hasMore = false;
-        } else {
-          allData = [...allData, ...data];
-          setFetchProgress(allData.length);
-          
-          if (data.length < 1000) {
-            hasMore = false;
-          } else {
-            start += 1000;
-            end += 1000;
-          }
-        }
+      if (allData.length === 0) {
+        setError('Nenhum dado encontrado para os filtros informados.');
+        return;
       }
 
       if (allData.length === 0) {
