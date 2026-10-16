@@ -96,6 +96,11 @@ export default function ControleLeiturista() {
       return;
     }
 
+    if (ulDe && ulPara && Number(ulDe) > Number(ulPara)) {
+      setError('Intervalo inválido: O valor de "UL DE" não pode ser maior que "UL PARA". Por favor, corrija o intervalo.');
+      return;
+    }
+
     setError(null);
     setLoading(true);
     setHasGenerated(false);

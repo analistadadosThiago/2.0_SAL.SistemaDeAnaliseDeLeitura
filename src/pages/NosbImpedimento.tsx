@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosNosb, getNosbImpedimento } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosImpedimento, getNosbImpedimento, clearInternalCache } from '../lib/dadosGeraisService';
 import { NosbImpedimentoData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -58,13 +58,14 @@ export default function NosbImpedimento() {
   // 1. Fetch Filter Options
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
+    clearInternalCache();
     try {
       const [anosRes, mesesRes, razoesRes, matrsRes, motivosRes] = await Promise.all([
-        getAnos(),
-        getMeses(),
-        getRazoes(),
+        getAnos(true),
+        getMeses(true),
+        getRazoes(true),
         getMatriculas(),
-        getMotivosNosb()
+        getMotivosImpedimento()
       ]);
 
       const anos = (anosRes.data || []).map(item => String(item.ano));

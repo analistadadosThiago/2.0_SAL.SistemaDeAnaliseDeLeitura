@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getRazoes, getMatriculas, getDadosApresentacao } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosCna, getDadosApresentacao, clearInternalCache } from '../lib/dadosGeraisService';
 import { ApresentacaoData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -65,19 +65,21 @@ export default function ControleApresentacao() {
   // 1. Fetch Filter Options
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
+    clearInternalCache();
     try {
-      const [anosRes, mesesRes, razoesRes, matrsRes] = await Promise.all([
-        getAnos(),
-        getMeses(),
-        getRazoes(),
-        getMatriculas()
+      const [anosRes, mesesRes, razoesRes, matrsRes, cnasRes] = await Promise.all([
+        getAnos(true),
+        getMeses(true),
+        getRazoes(true),
+        getMatriculas(),
+        getMotivosCna()
       ]);
 
       const anos = (anosRes.data || []).map(item => String(item.ano));
       const meses = (mesesRes.data || []).map(item => item.mes);
       const razoes = (razoesRes.data || []).map(item => String(item.rz));
       const matriculas = (matrsRes.data || []).map(item => item.matr);
-      const motivos = ['00', '01', '02', '03', '04', '05'];
+      const motivos = (cnasRes.data || []).map(item => item.motivo);
 
       setOptions({ anos, meses, razoes, matriculas, motivos });
       if (anos.length > 0) setAno(anos[0]);

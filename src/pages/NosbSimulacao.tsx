@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosNosb, getNosbSimulacao } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosSimulacao, getNosbSimulacao, clearInternalCache } from '../lib/dadosGeraisService';
 import { NosbSimulacaoData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -57,13 +57,14 @@ export default function NosbSimulacao() {
   // 1. Fetch Filter Options
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
+    clearInternalCache();
     try {
       const [anosRes, mesesRes, razoesRes, matrsRes, motivosRes] = await Promise.all([
-        getAnos(),
-        getMeses(),
-        getRazoes(),
+        getAnos(true),
+        getMeses(true),
+        getRazoes(true),
         getMatriculas(),
-        getMotivosNosb()
+        getMotivosSimulacao()
       ]);
 
       const anos = (anosRes.data || []).map(item => String(item.ano));
@@ -121,30 +122,22 @@ export default function NosbSimulacao() {
         return;
       }
 
-      // Filter out "Faturada" and ensure strings with robust fallbacks
-      const filteredData = allData
-        .filter((r: any) => r.f_motivo !== 'Faturada')
-        .map((r: any) => ({
-          f_mes: String(r.f_mes || ""),
-          f_ano: String(r.f_ano || ""),
-          f_rz: String(r.f_rz || ""),
-          f_ul: String(r.f_ul || ""),
-          f_instalacao: String(r.f_instalacao || ""),
-          f_medidor: String(r.f_medidor || ""),
-          f_reg: String(r.f_reg || ""),
-          f_tipo: String(r.f_tipo || ""),
-          f_matr: String(r.f_matr || ""),
-          f_nl: String(r.f_nl || ""),
-          f_l_atual: String(r.f_l_atual || ""),
-          f_motivo: String(r.f_motivo || "")
-        }));
+      const mappedData = allData.map((r: any) => ({
+        f_mes: String(r.f_mes || ""),
+        f_ano: String(r.f_ano || ""),
+        f_rz: String(r.f_rz || ""),
+        f_ul: String(r.f_ul || ""),
+        f_instalacao: String(r.f_instalacao || ""),
+        f_medidor: String(r.f_medidor || ""),
+        f_reg: String(r.f_reg || ""),
+        f_tipo: String(r.f_tipo || ""),
+        f_matr: String(r.f_matr || ""),
+        f_nl: String(r.f_nl || ""),
+        f_l_atual: String(r.f_l_atual || ""),
+        f_motivo: String(r.f_motivo || "")
+      }));
 
-      if (filteredData.length === 0) {
-        setError('Nenhum dado encontrado (excluindo Faturadas).');
-        return;
-      }
-
-      setResults(filteredData);
+      setResults(mappedData);
       setHasGenerated(true);
     } catch (err: any) {
       console.error('Erro na consulta:', err);

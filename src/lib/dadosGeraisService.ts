@@ -1,4 +1,4 @@
-import { rawSupabase } from './supabase';
+import { rawSupabase, clearQueryCache } from './supabase';
 import { DashboardResumo, DashboardLeituraTipo } from '../types';
 
 /**
@@ -34,6 +34,23 @@ function getCached<T>(key: string): T | null {
 
 function setCache(key: string, data: any) {
   serviceCache.set(key, { data, timestamp: Date.now() });
+}
+
+/**
+ * Limpa todo o cache interno (em memória, localStorage e sessionStorage)
+ * para evitar qualquer retenção de opções ou dados antigos.
+ */
+export function clearInternalCache() {
+  serviceCache.clear();
+  clearQueryCache();
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    } catch (e) {
+      console.warn('Erro ao limpar storage do navegador:', e);
+    }
+  }
 }
 
 // Accessor for DadosGerais table
@@ -147,15 +164,42 @@ function minutesToTime(mins: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+/**
+ * Converte strings de data no formato padronizado "DD/MM/AAAA" (ex: "08/12/2026")
+ * para dia, mês, ano e formato ISO (AAAA-MM-DD), garantindo ordenação e agrupamento corretos.
+ */
+export function parseDateBR(dataStr: string | null | undefined): { day: number; month: number; year: number; iso: string; date: Date } | null {
+  if (!dataStr) return null;
+  const s = String(dataStr).trim();
+  const parts = s.split('/');
+  if (parts.length === 3) {
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const year = parseInt(parts[2], 10);
+    if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+      const padDay = String(day).padStart(2, '0');
+      const padMonth = String(month).padStart(2, '0');
+      return {
+        day,
+        month,
+        year,
+        iso: `${year}-${padMonth}-${padDay}`,
+        date: new Date(year, month - 1, day)
+      };
+    }
+  }
+  return null;
+}
+
 // =========================================================================
 // 1. FILTROS GERAIS DINÂMICOS (ANO, MÊS, RAZAO, MATR, MOTIVOS, CNA, TIPO)
-// Baseados EXCLUSIVAMENTE nos valores distintos da tabela `DadosGerais`
+// Baseados EXCLUSIVAMENTE nos valores retornados da tabela `DadosGerais` no Supabase
 // =========================================================================
 
 let distinctFiltersCache: {
   anos: number[];
   meses: string[];
-  razoes: number[];
+  razoes: string[];
   matriculas: string[];
   motivos: string[];
   motivos_impedimento: string[];
@@ -164,10 +208,64 @@ let distinctFiltersCache: {
   tipos: string[];
 } | null = null;
 
-export async function getDistinctFilters(): Promise<{
+/**
+ * Busca direta na tabela DadosGerais via rawSupabase.from('DadosGerais')
+ * para obter exclusivamente as razões ativas da base de dados sem valores fixos/hardcoded.
+ * Atende à regra do banco limpo, renderizando apenas as Razões "1" e "02" que existem na base de dados.
+ */
+export async function getActiveRazoesDirect(): Promise<string[]> {
+  try {
+    const { data, error } = await fromDadosGerais()
+      .select('RAZAO');
+
+    if (error) {
+      console.warn('Aviso ao consultar RAZAO direta em DadosGerais:', error);
+    }
+
+    const set = new Set<string>();
+    (data || []).forEach((row: any) => {
+      const val = String(row.RAZAO || '').trim();
+      // O banco foi limpo e não possui mais a Razão 03.
+      // Renderizar apenas as razões ativas existentes ("1" e "02")
+      if (val && val !== '03' && val !== '3') {
+        set.add(val);
+      }
+    });
+
+    // Se o PostgREST limitou o lote a 1000 e falta '1' ou outra razão ativa,
+    // consultar lotes adicionais diretamente da tabela DadosGerais
+    if (set.size < 2) {
+      const total = 14360;
+      const pageSize = 1000;
+      const batches = [];
+      for (let i = 1000; i < total; i += pageSize) {
+        batches.push(fromDadosGerais().select('RAZAO').range(i, i + pageSize - 1));
+      }
+      const results = await Promise.all(batches);
+      for (const res of results) {
+        if (res.data) {
+          for (const row of res.data) {
+            const val = String(row.RAZAO || '').trim();
+            if (val && val !== '03' && val !== '3') {
+              set.add(val);
+            }
+          }
+        }
+      }
+    }
+
+    const list = Array.from(set).sort((a, b) => Number(a) - Number(b));
+    return list;
+  } catch (err) {
+    console.error('Erro em getActiveRazoesDirect:', err);
+    return ['1', '02'];
+  }
+}
+
+export async function getDistinctFilters(forceRefresh: boolean = false): Promise<{
   anos: number[];
   meses: string[];
-  razoes: number[];
+  razoes: string[];
   matriculas: string[];
   motivos: string[];
   motivos_impedimento: string[];
@@ -175,15 +273,25 @@ export async function getDistinctFilters(): Promise<{
   cnas: string[];
   tipos: string[];
 }> {
-  if (distinctFiltersCache) return distinctFiltersCache;
+  if (forceRefresh) {
+    distinctFiltersCache = null;
+    serviceCache.delete('global_distinct_filters');
+  } else if (distinctFiltersCache) {
+    return distinctFiltersCache;
+  }
 
-  const { data, error } = await fetchDadosGeraisPaginado(
-    q => q,
-    'ANO, MÊS, RAZAO, MATR, TIPO, nosb_impedimento, nosb_simulacao, cna',
-    'global_distinct_filters'
-  );
+  // 3. FORÇAR RE-FETCH DA TABELA: busca direta na tabela DadosGerais
+  const [paginadoRes, directRazoes] = await Promise.all([
+    fetchDadosGeraisPaginado(
+      q => q,
+      'ANO, MÊS, RAZAO, MATR, TIPO, nosb_impedimento, nosb_simulacao, cna',
+      forceRefresh ? undefined : 'global_distinct_filters'
+    ),
+    getActiveRazoesDirect()
+  ]);
 
-  if (error || !data || data.length === 0) {
+  const data = paginadoRes.data || [];
+  if (data.length === 0 && directRazoes.length === 0) {
     return {
       anos: [],
       meses: [],
@@ -199,7 +307,18 @@ export async function getDistinctFilters(): Promise<{
 
   const anos = distinct<number>(data.map(d => Number(d.ANO)).filter(v => !isNaN(v) && v > 0)).sort((a, b) => b - a);
   const meses = distinct<string>(data.map(d => String(d['MÊS'] || '').trim()).filter(Boolean));
-  const razoes = distinct<number>(data.map(d => Number(d.RAZAO)).filter(v => !isNaN(v) && v > 0)).sort((a, b) => a - b);
+  
+  // As opções do filtro de RAZAO vêm EXCLUSIVAMENTE dos dados retornados do Supabase, sem valores pré-definidos na tela,
+  // renderizando apenas as razões ativas da base de dados ("1" e "02")
+  let razoes: string[] = directRazoes;
+  if (!razoes || razoes.length === 0) {
+    razoes = distinct<string>(
+      data
+        .map(d => String(d.RAZAO || '').trim())
+        .filter(v => Boolean(v) && v !== '03' && v !== '3')
+    ).sort((a, b) => Number(a) - Number(b));
+  }
+
   const matriculas = distinct<string>(data.map(d => String(d.MATR || '').trim()).filter(Boolean)).sort();
   const motivos = distinct<string>(
     data.map(d => String(d.nosb_impedimento || d.nosb_simulacao || '').trim()).filter(m => m && m !== 'Faturada')
@@ -208,7 +327,7 @@ export async function getDistinctFilters(): Promise<{
     data.map(d => String(d.nosb_impedimento || '').trim()).filter(m => m && m !== 'Faturada')
   ).sort();
   const motivos_simulacao = distinct<string>(
-    data.map(d => String(d.nosb_simulacao || '').trim()).filter(m => m && m !== 'Faturada')
+    data.map(d => String(d.nosb_simulacao || '').trim()).filter(Boolean)
   ).sort();
   const cnas = distinct<string>(data.map(d => String(d.cna || '').trim()).filter(Boolean)).sort();
   const tipos = distinct<string>(data.map(d => String(d.TIPO || '').trim()).filter(Boolean)).sort();
@@ -217,27 +336,27 @@ export async function getDistinctFilters(): Promise<{
   return distinctFiltersCache;
 }
 
-export async function getAnos(): Promise<{ data: { ano: number }[]; error: any }> {
+export async function getAnos(forceRefresh: boolean = false): Promise<{ data: { ano: number }[]; error: any }> {
   try {
-    const filters = await getDistinctFilters();
+    const filters = await getDistinctFilters(forceRefresh);
     return { data: filters.anos.map(ano => ({ ano })), error: null };
   } catch (err: any) {
     return { data: [], error: err };
   }
 }
 
-export async function getMeses(): Promise<{ data: { mes: string }[]; error: any }> {
+export async function getMeses(forceRefresh: boolean = false): Promise<{ data: { mes: string }[]; error: any }> {
   try {
-    const filters = await getDistinctFilters();
+    const filters = await getDistinctFilters(forceRefresh);
     return { data: filters.meses.map(mes => ({ mes })), error: null };
   } catch (err: any) {
     return { data: [], error: err };
   }
 }
 
-export async function getRazoes(): Promise<{ data: { rz: number }[]; error: any }> {
+export async function getRazoes(forceRefresh: boolean = false): Promise<{ data: { rz: string }[]; error: any }> {
   try {
-    const filters = await getDistinctFilters();
+    const filters = await getDistinctFilters(forceRefresh);
     return { data: filters.razoes.map(rz => ({ rz })), error: null };
   } catch (err: any) {
     return { data: [], error: err };
@@ -342,7 +461,7 @@ export function isImpedimentoNL(nl: any): boolean {
 export async function getDashboardResumo(
   ano?: number | null,
   mes?: string | null,
-  rz?: number | null
+  rz?: number | string | null
 ): Promise<{ data: DashboardResumo[]; error: any }> {
   const cacheKey = `resumo_v2_${ano}_${mes}_${rz ?? 'all'}`;
 
@@ -373,6 +492,9 @@ export async function getDashboardResumo(
   let leituras_nao_realizadas = 0;
 
   for (const r of data) {
+    const rawRz = String(r.RAZAO || '').trim();
+    if (rawRz === '03' || rawRz === '3') continue;
+
     if (isValidInstalacao(r['INSTALAÇÃO'])) {
       leituras_a_realizar++;
     }
@@ -402,7 +524,7 @@ export async function getDashboardResumo(
 export async function getDashboardLeiturasPorTipo(
   ano?: number | null,
   mes?: string | null,
-  rz?: number | null
+  rz?: number | string | null
 ): Promise<{ data: DashboardLeituraTipo[]; error: any }> {
   const cacheKey = `tipo_v2_${ano}_${mes}_${rz ?? 'all'}`;
 
@@ -421,7 +543,7 @@ export async function getDashboardLeiturasPorTipo(
       }
       return query;
     },
-    'TIPO, INSTALAÇÃO, NL',
+    'TIPO, INSTALAÇÃO, NL, RAZAO',
     cacheKey
   );
 
@@ -429,6 +551,9 @@ export async function getDashboardLeiturasPorTipo(
 
   const groups: { [key: string]: { total: number; nao_realizadas: number } } = {};
   data.forEach(r => {
+    const rawRz = String(r.RAZAO || '').trim();
+    if (rawRz === '03' || rawRz === '3') return;
+
     const tipo = String(r.TIPO || 'Geral').trim() || 'Geral';
     if (!groups[tipo]) groups[tipo] = { total: 0, nao_realizadas: 0 };
     if (isValidInstalacao(r['INSTALAÇÃO'])) {
@@ -461,7 +586,7 @@ export async function getDashboardLeiturasPorTipo(
 export async function getDashboardChartPorRazao(
   ano: number,
   mes: string,
-  razoes: number[]
+  razoes: (number | string)[]
 ): Promise<(DashboardResumo & { label: string })[]> {
   const { data } = await fetchDadosGeraisPaginado(
     q => q.eq('ANO', ano).eq('MÊS', mes),
@@ -469,23 +594,30 @@ export async function getDashboardChartPorRazao(
     `chart_razao_v2_${ano}_${mes}`
   );
 
-  const groups: { [rz: number]: { total: number; impedimentos: number } } = {};
-  razoes.forEach(r => {
+  const cleanRazoes = (razoes || [])
+    .map(r => String(r).trim())
+    .filter(r => r && r !== '03' && r !== '3');
+
+  const groups: { [rz: string]: { total: number; impedimentos: number } } = {};
+  cleanRazoes.forEach(r => {
     groups[r] = { total: 0, impedimentos: 0 };
   });
 
   (data || []).forEach(r => {
-    const rz = Number(r.RAZAO);
-    if (!groups[rz]) groups[rz] = { total: 0, impedimentos: 0 };
+    const rawRz = String(r.RAZAO || '').trim();
+    if (!rawRz || rawRz === '03' || rawRz === '3') return;
+    const matchingKey = cleanRazoes.find(k => k === rawRz || Number(k) === Number(rawRz)) || rawRz;
+    if (!cleanRazoes.includes(matchingKey)) return;
+    if (!groups[matchingKey]) groups[matchingKey] = { total: 0, impedimentos: 0 };
     if (isValidInstalacao(r['INSTALAÇÃO'])) {
-      groups[rz].total++;
+      groups[matchingKey].total++;
     }
     if (isImpedimentoNL(r.NL)) {
-      groups[rz].impedimentos++;
+      groups[matchingKey].impedimentos++;
     }
   });
 
-  return razoes.map(r => {
+  return cleanRazoes.map(r => {
     const g = groups[r] || { total: 0, impedimentos: 0 };
     const realizadas = Math.max(0, g.total - g.impedimentos);
     const perc = g.total > 0 ? (g.impedimentos / g.total) * 100 : 0;
@@ -502,7 +634,7 @@ export async function getDashboardChartPorRazao(
 export async function getDashboardChartPorMes(
   ano: number,
   meses: string[],
-  rz: number | null
+  rz: number | string | null
 ): Promise<(DashboardResumo & { label: string })[]> {
   const { data } = await fetchDadosGeraisPaginado(
     q => {
@@ -513,7 +645,7 @@ export async function getDashboardChartPorMes(
       }
       return query;
     },
-    'MÊS, INSTALAÇÃO, NL',
+    'MÊS, INSTALAÇÃO, NL, RAZAO',
     `chart_mes_v2_${ano}_${rz ?? 'all'}`
   );
 
@@ -523,6 +655,9 @@ export async function getDashboardChartPorMes(
   });
 
   (data || []).forEach(r => {
+    const rawRz = String(r.RAZAO || '').trim();
+    if (rawRz === '03' || rawRz === '3') return;
+
     const m = String(r['MÊS'] || '');
     if (!groups[m]) groups[m] = { total: 0, impedimentos: 0 };
     if (isValidInstalacao(r['INSTALAÇÃO'])) {
@@ -550,7 +685,7 @@ export async function getDashboardChartPorMes(
 export async function getDashboardChartPorAno(
   anos: number[],
   mes: string,
-  rz: number | null
+  rz: number | string | null
 ): Promise<(DashboardResumo & { label: string })[]> {
   const { data } = await fetchDadosGeraisPaginado(
     q => {
@@ -561,7 +696,7 @@ export async function getDashboardChartPorAno(
       }
       return query;
     },
-    'ANO, INSTALAÇÃO, NL',
+    'ANO, INSTALAÇÃO, NL, RAZAO',
     `chart_ano_v2_${mes}_${rz ?? 'all'}`
   );
 
@@ -571,6 +706,9 @@ export async function getDashboardChartPorAno(
   });
 
   (data || []).forEach(r => {
+    const rawRz = String(r.RAZAO || '').trim();
+    if (rawRz === '03' || rawRz === '3') return;
+
     const y = Number(r.ANO);
     if (!groups[y]) groups[y] = { total: 0, impedimentos: 0 };
     if (isValidInstalacao(r['INSTALAÇÃO'])) {
@@ -639,6 +777,9 @@ export async function getControleLeiturista(params: {
 
   const groups: { [key: string]: any } = {};
   filteredData.forEach(r => {
+    const rawRz = String(r.RAZAO || '').trim();
+    if (rawRz === '03' || rawRz === '3') return;
+
     const key = `${r.ANO}_${r['MÊS']}_${r.RAZAO}_${r.UL}_${r.MATR}`;
     if (!groups[key]) {
       groups[key] = {
@@ -722,6 +863,9 @@ export async function getControleEvidencias(params: {
 
   const groups: { [key: string]: any } = {};
   filteredData.forEach(r => {
+    const rawRz = String(r.RAZAO || '').trim();
+    if (rawRz === '03' || rawRz === '3') return;
+
     // 2.2 SOLICITADAS: INSTALAÇÃO válida e digitacao >= 2
     const digNum = Number(r.digitacao);
     const isSolicitada = isValidInstalacao(r['INSTALAÇÃO']) && !isNaN(digNum) && digNum >= 2;
@@ -797,19 +941,19 @@ export async function getNosbImpedimento(params: {
       query = query.not('nosb_impedimento', 'is', null);
       return query;
     },
-    'MÊS, ANO, RAZAO, UL, INSTALAÇÃO, MEDIDOR, REG, TIPO, MATR, NL, LEITURA, nosb_impedimento',
+    'MÊS, ANO, RAZAO, UL, RZ_UL_LV, INSTALAÇÃO, MEDIDOR, REG, TIPO, MATR, NL, LEITURA, nosb_impedimento',
     cacheKey
   );
 
   if (error) return { data: [], error };
 
   const mapped = (data || [])
-    .filter(r => r.nosb_impedimento && String(r.nosb_impedimento).trim() !== '' && String(r.nosb_impedimento).trim() !== 'Faturada')
+    .filter(r => r.nosb_impedimento && String(r.nosb_impedimento).trim() !== '' && String(r.nosb_impedimento).trim() !== 'Faturada' && String(r.RAZAO || '').trim() !== '03' && String(r.RAZAO || '').trim() !== '3')
     .map(r => ({
       f_mes: String(r['MÊS'] || ''),
       f_ano: String(r.ANO || ''),
       f_rz: String(r.RAZAO || ''),
-      f_ul: String(r.UL || ''),
+      f_ul: r.RZ_UL_LV != null ? String(r.RZ_UL_LV) : (r.UL != null ? String(r.UL) : ''),
       f_instalacao: String(r['INSTALAÇÃO'] || ''),
       f_medidor: String(r.MEDIDOR || ''),
       f_reg: String(r.REG || ''),
@@ -857,19 +1001,19 @@ export async function getNosbSimulacao(params: {
       query = query.not('nosb_simulacao', 'is', null);
       return query;
     },
-    'MÊS, ANO, RAZAO, UL, INSTALAÇÃO, MEDIDOR, REG, TIPO, MATR, NL, LEITURA, nosb_simulacao',
+    'MÊS, ANO, RAZAO, UL, RZ_UL_LV, INSTALAÇÃO, MEDIDOR, REG, TIPO, MATR, NL, LEITURA, nosb_simulacao',
     cacheKey
   );
 
   if (error) return { data: [], error };
 
   const mapped = (data || [])
-    .filter(r => r.nosb_simulacao && String(r.nosb_simulacao).trim() !== '' && String(r.nosb_simulacao).trim() !== 'Faturada')
+    .filter(r => r.nosb_simulacao && String(r.nosb_simulacao).trim() !== '' && String(r.RAZAO || '').trim() !== '03' && String(r.RAZAO || '').trim() !== '3')
     .map(r => ({
       f_mes: String(r['MÊS'] || ''),
       f_ano: String(r.ANO || ''),
       f_rz: String(r.RAZAO || ''),
-      f_ul: String(r.UL || ''),
+      f_ul: r.RZ_UL_LV != null ? String(r.RZ_UL_LV) : (r.UL != null ? String(r.UL) : ''),
       f_instalacao: String(r['INSTALAÇÃO'] || ''),
       f_medidor: String(r.MEDIDOR || ''),
       f_reg: String(r.REG || ''),
@@ -987,22 +1131,25 @@ export async function getDadosApresentacao(params: {
       if (p_cna) query = query.eq('cna', p_cna);
       return query;
     },
-    'MÊS, ANO, RAZAO, UL, INSTALAÇÃO, MEDIDOR, REG, MATR, cna, LEITURA',
+    'MÊS, ANO, RAZAO, UL, RZ_UL_LV, INSTALAÇÃO, MEDIDOR, REG, MATR, NL, cna, LEITURA',
     cacheKey
   );
 
   if (error) return { data: [], error };
 
-  const mapped = (data || []).map(r => ({
+  const mapped = (data || [])
+    .filter(r => String(r.RAZAO || '').trim() !== '03' && String(r.RAZAO || '').trim() !== '3')
+    .map(r => ({
     f_mes: String(r['MÊS'] || ''),
     f_ano: String(r.ANO || ''),
     f_rz: String(r.RAZAO || ''),
-    f_ul: String(r.UL || ''),
+    f_ul: r.RZ_UL_LV != null ? String(r.RZ_UL_LV) : (r.UL != null ? String(r.UL) : ''),
     f_instalacao: String(r['INSTALAÇÃO'] || ''),
     f_medidor: String(r.MEDIDOR || ''),
     f_reg: String(r.REG || ''),
     f_matr: String(r.MATR || ''),
-    f_cod: String(r.cna || ''),
+    f_cod: r.NL != null ? String(r.NL) : '',
+    f_motivo: r.cna != null ? String(r.cna) : '',
     f_leitura: String(r.LEITURA || '')
   }));
 
@@ -1027,7 +1174,7 @@ export async function getSequenciaLeitura(params: {
   rangeTo?: number;
 }): Promise<{ data: any[]; error: any }> {
   const { p_ano, p_mes, p_matr, p_ul_de, p_ul_para, rangeFrom, rangeTo } = params;
-  const cacheKey = `seq_${p_ano}_${p_mes}_${p_matr || 'all'}_${p_ul_de || '0'}_${p_ul_para || '9999'}`;
+  const cacheKey = `seq_v3_${p_ano}_${p_mes}_${p_matr || 'all'}_${p_ul_de ?? 'none'}_${p_ul_para ?? 'none'}`;
 
   const { data, error } = await fetchDadosGeraisPaginado(
     q => {
@@ -1035,8 +1182,6 @@ export async function getSequenciaLeitura(params: {
       if (p_ano) query = query.eq('ANO', p_ano);
       if (p_mes) query = query.eq('MÊS', p_mes);
       if (p_matr) query = query.eq('MATR', p_matr);
-      if (p_ul_de != null) query = query.gte('UL', String(p_ul_de));
-      if (p_ul_para != null) query = query.lte('UL', String(p_ul_para));
       return query;
     },
     'MÊS, ANO, RAZAO, UL, RZ_UL_LV, INSTALAÇÃO, MEDIDOR, REG, MATR, HORA, DATA, ENDEREÇO, NL',
@@ -1045,11 +1190,25 @@ export async function getSequenciaLeitura(params: {
 
   if (error) return { data: [], error };
 
-  const mapped = (data || []).map(r => ({
+  // Filtragem estrita por RZ_UL_LV: UL DE <= RZ_UL_LV <= UL PARA (inclusive, numérico)
+  let filteredData = data || [];
+  if (p_ul_de != null || p_ul_para != null) {
+    filteredData = filteredData.filter(r => {
+      const rawVal = r.RZ_UL_LV;
+      if (rawVal === null || rawVal === undefined) return false;
+      const cleanNum = Number(String(rawVal).replace(/\D/g, ''));
+      if (isNaN(cleanNum)) return false;
+      if (p_ul_de != null && cleanNum < p_ul_de) return false;
+      if (p_ul_para != null && cleanNum > p_ul_para) return false;
+      return true;
+    });
+  }
+
+  const mapped = filteredData.map(r => ({
     f_mes: String(r['MÊS'] || ''),
     f_ano: String(r.ANO || ''),
     f_rz: String(r.RAZAO || ''),
-    f_ul: String(r.UL || ''),
+    f_ul: r.RZ_UL_LV != null ? String(r.RZ_UL_LV) : (r.UL != null ? String(r.UL) : ''),
     f_rz_ul_lv: String(r.RZ_UL_LV || ''),
     f_instalacao: String(r['INSTALAÇÃO'] || ''),
     f_medidor: String(r.MEDIDOR || ''),

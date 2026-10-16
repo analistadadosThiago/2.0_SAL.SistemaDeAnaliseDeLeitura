@@ -25,7 +25,8 @@ import {
   getDashboardLeiturasPorTipo, 
   getDashboardChartPorRazao, 
   getDashboardChartPorMes, 
-  getDashboardChartPorAno 
+  getDashboardChartPorAno,
+  clearInternalCache
 } from '../lib/dadosGeraisService';
 import { DashboardResumo, DashboardLeituraTipo, DashboardFiltros } from '../types';
 
@@ -39,7 +40,7 @@ export default function Dashboard() {
   const [options, setOptions] = useState<{
     anos: number[];
     meses: string[];
-    razoes: number[];
+    razoes: string[];
   }>({
     anos: [],
     meses: [],
@@ -49,7 +50,7 @@ export default function Dashboard() {
   // Selected Filters
   const [ano, setAno] = useState<number | null>(null);
   const [mes, setMes] = useState<string | null>(null);
-  const [rz, setRz] = useState<number | null>(null);
+  const [rz, setRz] = useState<string | null>(null);
   
   // Data State
   const [resumo, setResumo] = useState<DashboardResumo | null>(null);
@@ -71,17 +72,20 @@ export default function Dashboard() {
   // 1. Fetch Filter Options with Direct Table Query
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
+    // 2. Limpa o cache interno para garantir que dados antigos não sejam retidos
+    clearInternalCache();
 
     try {
+      // 3. Força busca direta na tabela DadosGerais
       const [anosRes, mesesRes, razoesRes] = await Promise.all([
-        getAnos(),
-        getMeses(),
-        getRazoes()
+        getAnos(true),
+        getMeses(true),
+        getRazoes(true)
       ]);
 
       const anos = (anosRes.data || []).map(item => item.ano);
       const meses = (mesesRes.data || []).map(item => item.mes);
-      const razoes = (razoesRes.data || []).map(item => item.rz);
+      const razoes = (razoesRes.data || []).map(item => String(item.rz));
 
       const newOptions = { anos, meses, razoes };
       setOptions(newOptions);
@@ -113,8 +117,8 @@ export default function Dashboard() {
     
     try {
       const [resumoRes, tipoRes] = await Promise.all([
-        getDashboardResumo(Number(ano), String(mes), rz !== null ? Number(rz) : null),
-        getDashboardLeiturasPorTipo(Number(ano), String(mes), rz !== null ? Number(rz) : null)
+        getDashboardResumo(Number(ano), String(mes), rz ? String(rz) : null),
+        getDashboardLeiturasPorTipo(Number(ano), String(mes), rz ? String(rz) : null)
       ]);
 
       if (resumoRes.error) throw resumoRes.error;
@@ -125,7 +129,7 @@ export default function Dashboard() {
       setHasGenerated(true);
 
       // Fetch Chart Data based on active tab
-      await updateChartData(activeTab, Number(ano), String(mes), rz);
+      await updateChartData(activeTab, Number(ano), String(mes), rz ? String(rz) : null);
       
     } catch (error: any) {
       console.error('Erro ao gerar relatório:', error);
@@ -136,7 +140,7 @@ export default function Dashboard() {
     }
   };
 
-  const updateChartData = async (tab: 'razao' | 'mes' | 'ano', currentAno: number, currentMes: string, currentRz: number | null) => {
+  const updateChartData = async (tab: 'razao' | 'mes' | 'ano', currentAno: number, currentMes: string, currentRz: string | null) => {
     setLoadingChart(true);
     try {
       let results: (DashboardResumo & { label: string })[] = [];
@@ -145,9 +149,9 @@ export default function Dashboard() {
         results = await getDashboardChartPorRazao(currentAno, currentMes, options.razoes);
       } else if (tab === 'mes') {
         const monthsToFetch = options.meses.length > 0 ? options.meses : [currentMes];
-        results = await getDashboardChartPorMes(currentAno, monthsToFetch, currentRz);
+        results = await getDashboardChartPorMes(currentAno, monthsToFetch, currentRz ? Number(currentRz) : null);
       } else if (tab === 'ano') {
-        results = await getDashboardChartPorAno(options.anos, currentMes, currentRz);
+        results = await getDashboardChartPorAno(options.anos, currentMes, currentRz ? Number(currentRz) : null);
         results = results.reverse();
       }
 
@@ -297,7 +301,7 @@ export default function Dashboard() {
                 <span className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Razão</span>
                 <select 
                   value={rz || ''} 
-                  onChange={(e) => setRz(e.target.value ? Number(e.target.value) : null)}
+                  onChange={(e) => setRz(e.target.value || null)}
                   className="text-sm border-zinc-200 focus:ring-emerald-500 focus:border-emerald-500 bg-zinc-50 rounded-xl px-4 py-2 font-semibold text-zinc-700 min-w-[140px] transition-all"
                 >
                   <option value="">Todas Razões</option>

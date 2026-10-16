@@ -85,6 +85,10 @@ interface CacheEntry {
 const queryCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 20000; // 20 seconds
 
+export function clearQueryCache() {
+  queryCache.clear();
+}
+
 /**
  * Helper to fetch records from table DadosGerais in fast parallel batches
  * so no records are silently discarded by PostgREST limits (1000 items per request)
@@ -217,11 +221,11 @@ async function executeDadosGeraisHandler(
 
       case 'dashboard_getrazoes': {
         const { data, error } = await fromDadosGerais()
-          .select('RAZAO')
-          .limit(1000);
+          .select('RAZAO');
         if (error) return { data: null, error };
-        const rawRazoes = distinct((data || []).map((r: any) => Number(r.RAZAO))).sort((a: number, b: number) => a - b);
-        const razoes = rawRazoes.length > 0 ? rawRazoes : Array.from({ length: 18 }, (_, i) => i + 1);
+        const rawRazoes = distinct((data || []).map((r: any) => String(r.RAZAO || '').trim()))
+          .filter(r => r && r !== '03' && r !== '3');
+        const razoes = rawRazoes.sort((a, b) => Number(a) - Number(b));
         return { data: razoes.map(rz => ({ rz })), error: null };
       }
 
@@ -262,8 +266,9 @@ async function executeDadosGeraisHandler(
         const rawMeses = distinct(rows.map(r => r['MÊS']));
         const meses = rawMeses.length > 0 ? rawMeses : ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
-        const rawRazoes = distinct(rows.map(r => r.RAZAO)).sort((a, b) => Number(a) - Number(b));
-        const razoes = rawRazoes.length > 0 ? rawRazoes : Array.from({ length: 18 }, (_, i) => i + 1);
+        const rawRazoes = distinct(rows.map(r => String(r.RAZAO || '').trim()))
+          .filter(r => r && r !== '03' && r !== '3');
+        const razoes = rawRazoes.sort((a, b) => Number(a) - Number(b));
 
         const matriculas = distinct(rows.map(r => r.MATR)).sort();
         const motivos = distinct(rows.map(r => r.nosb_impedimento || r.nosb_simulacao)).filter(m => m !== 'Faturada').sort();

@@ -95,6 +95,11 @@ export default function SequenciaLeitura() {
       return;
     }
 
+    if (ulDe && ulPara && Number(ulDe) > Number(ulPara)) {
+      setError('Intervalo inválido: O valor de "UL DE" não pode ser maior que "UL PARA". Por favor, corrija o intervalo.');
+      return;
+    }
+
     setError(null);
     setLoading(true);
     setHasGenerated(false);
@@ -122,7 +127,16 @@ export default function SequenciaLeitura() {
         return;
       }
 
-      // Map and sort ascending by Data and Hora
+      // Map and sort ascending by Data (DD/MM/AAAA) and Hora
+      const toSortable = (dStr: string, hStr: string) => {
+        const parts = (dStr || '').split('/');
+        if (parts.length === 3) {
+          const [d, m, y] = parts;
+          return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')} ${hStr || ''}`;
+        }
+        return `${dStr} ${hStr || ''}`;
+      };
+
       const mappedData: SequenciaLeituraData[] = allData.map((r: any) => ({
         f_mes: String(r.f_mes || ""),
         f_ano: String(r.f_ano || ""),
@@ -135,12 +149,9 @@ export default function SequenciaLeitura() {
         f_data: String(r.f_data || ""),
         f_hora: String(r.f_hora || ""),
         f_endereco: String(r.f_endereco || ""),
-        f_rz_ul_lv: String(r.f_rz_ul_lv || "") // Keep this at the end if not used in table
+        f_rz_ul_lv: String(r.f_rz_ul_lv || "")
       })).sort((a, b) => {
-        // Sort ascending by Data and Hora
-        const dateA = a.f_data.split('/').reverse().join('-') + ' ' + a.f_hora;
-        const dateB = b.f_data.split('/').reverse().join('-') + ' ' + b.f_hora;
-        return dateA.localeCompare(dateB);
+        return toSortable(a.f_data, a.f_hora).localeCompare(toSortable(b.f_data, b.f_hora));
       });
 
       setResults(mappedData);
@@ -311,24 +322,24 @@ export default function SequenciaLeitura() {
           <div className="flex flex-col gap-1.5">
             <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider ml-1">UL DE</span>
             <input 
-              type="number"
+              type="text"
               maxLength={8}
               value={ulDe}
-              onChange={(e) => setUlDe(e.target.value.slice(0, 8))}
+              onChange={(e) => setUlDe(e.target.value.replace(/\D/g, '').slice(0, 8))}
               placeholder="0"
-              className="text-sm border-zinc-200 focus:ring-blue-500 focus:border-blue-500 bg-zinc-50 rounded-xl px-4 py-2.5 font-bold text-zinc-700 w-24 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="text-sm border-zinc-200 focus:ring-blue-500 focus:border-blue-500 bg-zinc-50 rounded-xl px-4 py-2.5 font-bold text-zinc-700 w-24 transition-all"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider ml-1">UL PARA</span>
             <input 
-              type="number"
+              type="text"
               maxLength={8}
               value={ulPara}
-              onChange={(e) => setUlPara(e.target.value.slice(0, 8))}
+              onChange={(e) => setUlPara(e.target.value.replace(/\D/g, '').slice(0, 8))}
               placeholder="99999999"
-              className="text-sm border-zinc-200 focus:ring-blue-500 focus:border-blue-500 bg-zinc-50 rounded-xl px-4 py-2.5 font-bold text-zinc-700 w-24 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="text-sm border-zinc-200 focus:ring-blue-500 focus:border-blue-500 bg-zinc-50 rounded-xl px-4 py-2.5 font-bold text-zinc-700 w-24 transition-all"
             />
           </div>
 

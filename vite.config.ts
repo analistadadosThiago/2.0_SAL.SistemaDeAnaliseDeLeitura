@@ -17,8 +17,8 @@ export default defineConfig(({mode}) => {
   };
 
   const sanitizeKey = (key?: string) => {
-    const defaultKey = 'sb_publishable_7ikVHkk3N6N7uv2-cmSsTg_VMgP9IMO';
-    if (!key || key.includes('undefined')) return defaultKey;
+    const defaultKey = 'sb_publishable_6aZTdeKjeASNqrJswJu9XQ_FD98xZpJ';
+    if (!key || key.includes('undefined') || key === 'sb_publishable_7ikVHkk3N6N7uv2-cmSsTg_VMgP9IMO' || key === 'MY_SUPABASE_KEY') return defaultKey;
     return key.trim();
   };
 

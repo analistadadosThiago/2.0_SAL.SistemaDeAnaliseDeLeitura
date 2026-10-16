@@ -3,6 +3,16 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
+// Limpa qualquer estado armazenado no localStorage ou sessionStorage para evitar retenção de dados antigos
+try {
+  if (typeof window !== 'undefined') {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  }
+} catch (e) {
+  console.warn('Erro ao limpar storage do navegador:', e);
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
