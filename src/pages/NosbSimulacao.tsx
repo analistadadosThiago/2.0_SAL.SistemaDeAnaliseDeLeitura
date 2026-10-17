@@ -105,9 +105,9 @@ export default function NosbSimulacao() {
 
     try {
       const { data, error: serviceError } = await getNosbSimulacao({
-        p_ano: Number(ano) || 2026,
-        p_mes: mes || "Outubro",
-        p_rz: razao ? Number(razao) : null,
+        p_ano: ano ? Number(ano) : null,
+        p_mes: mes || null,
+        p_rz: razao ? razao : null,
         p_matr: matr || null,
         p_motivo: motivo || null
       });

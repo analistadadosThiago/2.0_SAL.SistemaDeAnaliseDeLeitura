@@ -130,6 +130,10 @@ export interface ControleHorarioData {
   f_tempo_servico_formatado: string;
   f_media_leitura_hora: string;
   f_media_leitura_hora_inteiro: number;
+  f_total_leituras?: number;
+  f_leit_urb?: number;
+  f_leit_povoado?: number;
+  f_leit_rural?: number;
 }
 
 export interface SequenciaLeituraData {

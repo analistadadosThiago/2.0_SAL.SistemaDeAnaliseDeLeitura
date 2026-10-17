@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getMatriculas, getSequenciaLeitura } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getMatriculas, getSequenciaLeitura, formatDataBR } from '../lib/dadosGeraisService';
 import { SequenciaLeituraData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -146,7 +146,7 @@ export default function SequenciaLeitura() {
         f_medidor: String(r.f_medidor || ""),
         f_reg: String(r.f_reg || ""),
         f_matr: String(r.f_matr || ""),
-        f_data: String(r.f_data || ""),
+        f_data: formatDataBR(r.f_data || ""),
         f_hora: String(r.f_hora || ""),
         f_endereco: String(r.f_endereco || ""),
         f_rz_ul_lv: String(r.f_rz_ul_lv || "")

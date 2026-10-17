@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getMatriculas, getControleHorario } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getMatriculas, getControleHorario, formatDataBR } from '../lib/dadosGeraisService';
 import { ControleHorarioData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -107,8 +107,8 @@ export default function ControleHorario() {
 
     try {
       const { data, error: serviceError } = await getControleHorario({
-        p_ano: Number(ano) || 2026,
-        p_mes: mes || "Outubro",
+        p_ano: ano ? Number(ano) : null,
+        p_mes: mes || null,
         p_matr: matr || null,
         p_data: dataSel || null
       });
@@ -117,11 +117,6 @@ export default function ControleHorario() {
 
       const allData = data || [];
       setFetchProgress(allData.length);
-
-      if (allData.length === 0) {
-        setError('Nenhum dado encontrado para os filtros informados.');
-        return;
-      }
 
       if (allData.length === 0) {
         setError('Nenhum dado encontrado para os filtros informados.');
@@ -148,13 +143,17 @@ export default function ControleHorario() {
 
         return {
           f_matricula: String(r.f_matricula || ""),
-          f_data: String(r.f_data || ""),
+          f_data: formatDataBR(r.f_data || ""),
           f_hora_inicial: horaInicial,
           f_hora_final: horaFinal,
           f_tempo_servico: String(r.f_tempo_servico || ""),
           f_tempo_servico_formatado: tempoServicoFormatado,
           f_media_leitura_hora: String(r.f_media_leitura_hora || "0"),
-          f_media_leitura_hora_inteiro: Number(r.f_media_leitura_hora_inteiro || Math.round(Number(r.f_media_leitura_hora || 0)))
+          f_media_leitura_hora_inteiro: Number(r.f_media_leitura_hora_inteiro || Math.round(Number(r.f_media_leitura_hora || 0))),
+          f_total_leituras: Number(r.f_total_leituras || 0),
+          f_leit_urb: Number(r.f_leit_urb || 0),
+          f_leit_povoado: Number(r.f_leit_povoado || 0),
+          f_leit_rural: Number(r.f_leit_rural || 0)
         };
       });
 
@@ -218,20 +217,41 @@ export default function ControleHorario() {
     };
   }, [results]);
 
-  // 5. Chart Logic
+  // 5. Chart Logic - Análise de Atividade por Matrícula
   const chartData = useMemo(() => {
-    const totalsByMatr: { [key: string]: number } = {};
+    const totalsByMatr: { 
+      [key: string]: { 
+        totalLeituras: number; 
+        leitUrb: number; 
+        leitPovoado: number; 
+        leitRural: number; 
+      } 
+    } = {};
+
     results.forEach(r => {
-      totalsByMatr[r.f_matricula] = (totalsByMatr[r.f_matricula] || 0) + r.f_media_leitura_hora_inteiro;
+      const matr = r.f_matricula;
+      if (!totalsByMatr[matr]) {
+        totalsByMatr[matr] = {
+          totalLeituras: 0,
+          leitUrb: 0,
+          leitPovoado: 0,
+          leitRural: 0
+        };
+      }
+      totalsByMatr[matr].totalLeituras += (r.f_total_leituras || 0);
+      totalsByMatr[matr].leitUrb += (r.f_leit_urb || 0);
+      totalsByMatr[matr].leitPovoado += (r.f_leit_povoado || 0);
+      totalsByMatr[matr].leitRural += (r.f_leit_rural || 0);
     });
 
     const sorted = Object.entries(totalsByMatr)
-      .map(([name, total]) => ({ name, total }))
-      .sort((a, b) => b.total - a.total);
+      .map(([name, d]) => ({ name, ...d }))
+      .sort((a, b) => b.totalLeituras - a.totalLeituras);
 
     return {
       categories: sorted.map(i => i.name),
-      series: [{ name: 'Tempo Atividade / Leitura', data: sorted.map(i => i.total) }]
+      details: sorted,
+      series: [{ name: 'Total de leituras', data: sorted.map(i => i.totalLeituras) }]
     };
   }, [results]);
 
@@ -253,6 +273,7 @@ export default function ControleHorario() {
     dataLabels: { 
       enabled: true,
       offsetY: -20,
+      formatter: (val: any) => (val !== undefined && val !== null ? val.toLocaleString('pt-BR') : '0'),
       style: { colors: ['#3f3f46'], fontSize: '12px', fontWeight: 'bold' }
     },
     xaxis: { 
@@ -266,40 +287,49 @@ export default function ControleHorario() {
         }
       }
     },
-    yaxis: { show: false },
+    yaxis: { 
+      show: false,
+      max: (maxVal: number) => Math.ceil(maxVal * 1.15)
+    },
     fill: { opacity: 1 },
     legend: { show: false },
-    grid: { show: false },
+    grid: { 
+      show: false,
+      padding: {
+        top: 25
+      }
+    },
     tooltip: {
       custom: ({ series, seriesIndex, dataPointIndex, w }) => {
         const matr = w.globals.labels[dataPointIndex];
-        // Find the first record for this matricula to show in tooltip as example or summary
-        const firstRecord = results.find(r => r.f_matricula === matr);
+        const item = chartData.details[dataPointIndex];
+        const total = item ? item.totalLeituras : series[seriesIndex][dataPointIndex];
+        const urb = item ? item.leitUrb : 0;
+        const pov = item ? item.leitPovoado : 0;
+        const rur = item ? item.leitRural : 0;
         
         return `
           <div class="p-3 bg-white border border-zinc-200 shadow-xl rounded-xl">
-            <div class="text-xs font-black text-zinc-400 uppercase tracking-wider mb-2">${matr}</div>
+            <div class="text-xs font-black text-zinc-400 uppercase tracking-wider mb-2">Matrícula ${matr}</div>
             <div class="space-y-1.5">
               <div class="flex items-center justify-between gap-4">
-                <span class="text-xs font-bold text-zinc-600">Total Atividade</span>
-                <span class="text-xs font-black text-blue-600">${series[seriesIndex][dataPointIndex]}</span>
+                <span class="text-xs font-bold text-zinc-600">Total de leituras</span>
+                <span class="text-xs font-black text-blue-600">${total}</span>
               </div>
-              ${firstRecord ? `
-                <div class="pt-1.5 mt-1.5 border-t border-zinc-100 space-y-1">
-                  <div class="flex items-center justify-between gap-4">
-                    <span class="text-xs font-medium text-zinc-500">Hora Inicial</span>
-                    <span class="text-xs font-bold text-zinc-700">${firstRecord.f_hora_inicial}</span>
-                  </div>
-                  <div class="flex items-center justify-between gap-4">
-                    <span class="text-xs font-medium text-zinc-500">Hora Final</span>
-                    <span class="text-xs font-bold text-zinc-700">${firstRecord.f_hora_final}</span>
-                  </div>
-                  <div class="flex items-center justify-between gap-4">
-                    <span class="text-xs font-medium text-zinc-500">Tempo Serviço</span>
-                    <span class="text-xs font-bold text-zinc-700">${firstRecord.f_tempo_servico_formatado}</span>
-                  </div>
+              <div class="pt-1.5 mt-1.5 border-t border-zinc-100 space-y-1">
+                <div class="flex items-center justify-between gap-4">
+                  <span class="text-xs font-medium text-zinc-500">Total de leituras Urbanas</span>
+                  <span class="text-xs font-bold text-zinc-700">${urb}</span>
                 </div>
-              ` : ''}
+                <div class="flex items-center justify-between gap-4">
+                  <span class="text-xs font-medium text-zinc-500">Total de leituras Povoados</span>
+                  <span class="text-xs font-bold text-zinc-700">${pov}</span>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <span class="text-xs font-medium text-zinc-500">Total de leituras Rurais</span>
+                  <span class="text-xs font-bold text-zinc-700">${rur}</span>
+                </div>
+              </div>
             </div>
           </div>
         `;

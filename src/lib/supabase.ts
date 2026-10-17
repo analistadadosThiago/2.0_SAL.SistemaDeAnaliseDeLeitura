@@ -34,9 +34,9 @@ const supabaseUrl = sanitizeSupabaseUrl(rawUrl);
 
 const rawKey =
   (typeof import.meta !== 'undefined' &&
-    (import.meta.env?.VITE_SUPABASE_ANON_KEY ||
+    (import.meta.env?.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
       import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
-      import.meta.env?.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)) ||
+      import.meta.env?.VITE_SUPABASE_ANON_KEY)) ||
   'sb_publishable_6aZTdeKjeASNqrJswJu9XQ_FD98xZpJ';
 const supabaseAnonKey = sanitizeSupabaseKey(rawKey);
 
@@ -69,6 +69,10 @@ const resilientFetch: typeof fetch = async (input, init) => {
 
 // 1. Official Supabase client connected to zeipsxfnmkhrcqkxvddk.supabase.co
 export const rawSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
+  },
   global: {
     fetch: resilientFetch
   }
@@ -162,6 +166,51 @@ export async function queryDadosGeraisBatched(
 // Helper to extract distinct values from an array
 function distinct<T>(arr: T[]): T[] {
   return Array.from(new Set(arr.filter(v => v !== null && v !== undefined && v !== '')));
+}
+
+/**
+ * Converte qualquer formato de data (DD/MM/AAAA, DD/MM/AA, YYYY-MM-DD ou número serial do Excel ex: 46302)
+ * para o formato padronizado "DD/MM/AAAA".
+ */
+export function formatDataBR(val: any): string {
+  if (val === null || val === undefined) return '';
+  const s = String(val).trim();
+  if (!s) return '';
+
+  // 1. Número serial do Excel (ex: 46302 -> 07/10/2026)
+  // Fórmula: new Date((numeroExcel - 25569) * 86400 * 1000)
+  const num = Number(s);
+  if (!isNaN(num) && num > 1000 && num < 200000) {
+    const ms = (Math.floor(num) - 25569) * 86400 * 1000;
+    const d = new Date(ms);
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const year = d.getUTCFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
+  // 2. Formato ISO YYYY-MM-DD
+  if (/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) {
+    const parts = s.split('-');
+    const year = parts[0];
+    const month = parts[1].padStart(2, '0');
+    const day = parts[2].substring(0, 2).padStart(2, '0');
+    return `${day}/${month}/${year}`;
+  }
+
+  // 3. Formato brasileiro DD/MM/AAAA ou DD/MM/AA
+  if (s.includes('/')) {
+    const parts = s.split('/');
+    if (parts.length === 3) {
+      const day = parts[0].padStart(2, '0');
+      const month = parts[1].padStart(2, '0');
+      let year = parts[2].trim();
+      if (year.length === 2) year = `20${year}`;
+      return `${day}/${month}/${year}`;
+    }
+  }
+
+  return s;
 }
 
 // Convert hours string / time to minutes since start of day
@@ -271,7 +320,7 @@ async function executeDadosGeraisHandler(
         const razoes = rawRazoes.sort((a, b) => Number(a) - Number(b));
 
         const matriculas = distinct(rows.map(r => r.MATR)).sort();
-        const motivos = distinct(rows.map(r => r.nosb_impedimento || r.nosb_simulacao)).filter(m => m !== 'Faturada').sort();
+        const motivos = distinct(rows.map(r => fnName === 'get_filtros_nosb_simulacao' ? r.nosb_simulacao : (r.nosb_impedimento || r.nosb_simulacao))).filter(Boolean).sort();
         const cnas = distinct(rows.map(r => r.cna)).sort();
 
         // Create unified array with attached metadata properties
@@ -580,7 +629,7 @@ async function executeDadosGeraisHandler(
         if (error) return { data: null, error };
 
         const mapped = (data || [])
-          .filter(r => r.nosb_simulacao && String(r.nosb_simulacao).trim() !== '' && String(r.nosb_simulacao).trim() !== 'Faturada')
+          .filter(r => r.nosb_simulacao && String(r.nosb_simulacao).trim() !== '' && String(r.RAZAO || '').trim() !== '03' && String(r.RAZAO || '').trim() !== '3')
           .map(r => ({
             f_mes: String(r['MÊS'] || ''),
             f_ano: String(r.ANO || ''),
@@ -608,28 +657,71 @@ async function executeDadosGeraisHandler(
       // -------------------------------------------------------------
       case 'get_controle_horario': {
         const { p_ano, p_mes, p_matr, p_data } = args;
-        const cacheKey = `horario_${p_ano}_${p_mes}_${p_matr || 'all'}_${p_data || 'all'}`;
+        const targetDate = p_data ? formatDataBR(p_data) : null;
+        const cacheKey = `horario_${p_ano || 'all'}_${p_mes || 'all'}_${p_matr || 'all'}_${targetDate || 'all'}`;
 
         const { data, error } = await queryDadosGeraisBatched(q => {
           let query = q;
           if (p_ano) query = query.eq('ANO', p_ano);
           if (p_mes) query = query.eq('MÊS', p_mes);
           if (p_matr) query = query.eq('MATR', p_matr);
-          if (p_data) query = query.eq('DATA', p_data);
           return query;
-        }, 'MATR, DATA, HORA', cacheKey);
+        }, 'MATR, DATA, HORA, TIPO, RAZAO', cacheKey);
 
         if (error) return { data: null, error };
 
-        // Group by MATR and DATA
-        const groups: { [key: string]: { matr: string; data: string; horas: number[]; total: number } } = {};
-        data.forEach(r => {
-          const matr = String(r.MATR || '');
-          const dt = String(r.DATA || '');
+        // Group by MATR and formatted DATA (supporting Excel serial numbers like 46302)
+        const groups: { 
+          [key: string]: { 
+            matr: string; 
+            data: string; 
+            horas: number[]; 
+            total: number;
+            leit_urb: number;
+            leit_povoado: number;
+            leit_rural: number;
+          } 
+        } = {};
+
+        (data || []).forEach(r => {
+          const rawRz = String(r.RAZAO || '').trim();
+          if (rawRz === '03' || rawRz === '3') return;
+
+          const matr = String(r.MATR || '').trim();
           if (!matr) return;
-          const key = `${matr}_${dt}`;
-          if (!groups[key]) groups[key] = { matr, data: dt, horas: [], total: 0 };
+
+          const dtFormatted = formatDataBR(r.DATA);
+          if (!dtFormatted) return;
+
+          // Se houver filtro de data selecionado, comparar a data padronizada
+          if (targetDate && dtFormatted !== targetDate) return;
+
+          const key = `${matr}_${dtFormatted}`;
+          if (!groups[key]) {
+            groups[key] = { 
+              matr, 
+              data: dtFormatted, 
+              horas: [], 
+              total: 0,
+              leit_urb: 0,
+              leit_povoado: 0,
+              leit_rural: 0
+            };
+          }
+
           groups[key].total++;
+
+          const tipoNorm = String(r.TIPO || '').trim().toLowerCase();
+          if (tipoNorm === 'urbano' || tipoNorm.startsWith('urb')) {
+            groups[key].leit_urb++;
+          } else if (tipoNorm === 'povoado' || tipoNorm.startsWith('pov')) {
+            groups[key].leit_povoado++;
+          } else if (tipoNorm === 'rural' || tipoNorm.startsWith('rur')) {
+            groups[key].leit_rural++;
+          } else {
+            groups[key].leit_urb++;
+          }
+
           const mins = timeStringToMinutes(r.HORA);
           if (mins !== null) {
             groups[key].horas.push(mins);
@@ -652,7 +744,11 @@ async function executeDadosGeraisHandler(
             f_tempo_servico: minutesToTime(diffMins),
             f_tempo_servico_formatado: minutesToTime(diffMins),
             f_media_leitura_hora: media.toFixed(1),
-            f_media_leitura_hora_inteiro: Math.round(media)
+            f_media_leitura_hora_inteiro: Math.round(media),
+            f_total_leituras: g.total,
+            f_leit_urb: g.leit_urb,
+            f_leit_povoado: g.leit_povoado,
+            f_leit_rural: g.leit_rural
           };
         }).sort((a, b) => a.f_matricula.localeCompare(b.f_matricula));
 

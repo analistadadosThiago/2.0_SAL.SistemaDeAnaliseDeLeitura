@@ -165,12 +165,57 @@ function minutesToTime(mins: number): string {
 }
 
 /**
+ * Converte qualquer formato de data (DD/MM/AAAA, DD/MM/AA, YYYY-MM-DD ou número serial do Excel ex: 46302)
+ * para o formato correto e padronizado "DD/MM/AAAA".
+ */
+export function formatDataBR(val: any): string {
+  if (val === null || val === undefined) return '';
+  const s = String(val).trim();
+  if (!s) return '';
+
+  // 1. Número serial do Excel (exemplo: 46302 -> 07/10/2026)
+  // Conversão oficial do Excel: new Date((numeroExcel - 25569) * 86400 * 1000)
+  const num = Number(s);
+  if (!isNaN(num) && num > 1000 && num < 200000) {
+    const ms = (Math.floor(num) - 25569) * 86400 * 1000;
+    const date = new Date(ms);
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const year = date.getUTCFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
+  // 2. Formato ISO YYYY-MM-DD (vindo de inputs HTML do tipo date)
+  if (/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) {
+    const parts = s.split('-');
+    const year = parts[0];
+    const month = parts[1].padStart(2, '0');
+    const day = parts[2].substring(0, 2).padStart(2, '0');
+    return `${day}/${month}/${year}`;
+  }
+
+  // 3. Formato brasileiro DD/MM/AAAA ou DD/MM/AA
+  if (s.includes('/')) {
+    const parts = s.split('/');
+    if (parts.length === 3) {
+      const day = parts[0].padStart(2, '0');
+      const month = parts[1].padStart(2, '0');
+      let year = parts[2].trim();
+      if (year.length === 2) year = `20${year}`;
+      return `${day}/${month}/${year}`;
+    }
+  }
+
+  return s;
+}
+
+/**
  * Converte strings de data no formato padronizado "DD/MM/AAAA" (ex: "08/12/2026")
  * para dia, mês, ano e formato ISO (AAAA-MM-DD), garantindo ordenação e agrupamento corretos.
  */
 export function parseDateBR(dataStr: string | null | undefined): { day: number; month: number; year: number; iso: string; date: Date } | null {
   if (!dataStr) return null;
-  const s = String(dataStr).trim();
+  const s = formatDataBR(dataStr);
   const parts = s.split('/');
   if (parts.length === 3) {
     const day = parseInt(parts[0], 10);
@@ -976,16 +1021,16 @@ export async function getNosbImpedimento(params: {
 // =========================================================================
 
 export async function getNosbSimulacao(params: {
-  p_ano: number;
-  p_mes: string;
-  p_rz?: number | null;
+  p_ano?: number | null;
+  p_mes?: string | null;
+  p_rz?: number | string | null;
   p_matr?: string | null;
   p_motivo?: string | null;
   rangeFrom?: number;
   rangeTo?: number;
 }): Promise<{ data: any[]; error: any }> {
   const { p_ano, p_mes, p_rz, p_matr, p_motivo, rangeFrom, rangeTo } = params;
-  const cacheKey = `nosb_sim_${p_ano}_${p_mes}_${p_rz || 'all'}_${p_matr || 'all'}_${p_motivo || 'all'}`;
+  const cacheKey = `nosb_sim_${p_ano || 'all'}_${p_mes || 'all'}_${p_rz || 'all'}_${p_matr || 'all'}_${p_motivo || 'all'}`;
 
   const { data, error } = await fetchDadosGeraisPaginado(
     q => {
@@ -993,8 +1038,9 @@ export async function getNosbSimulacao(params: {
       if (p_ano) query = query.eq('ANO', p_ano);
       if (p_mes) query = query.eq('MÊS', p_mes);
       if (p_rz) {
-        const rzStr = String(p_rz).padStart(2, '0');
-        query = query.in('RAZAO', [String(p_rz), rzStr, Number(p_rz)]);
+        const rzStr = String(p_rz).trim().padStart(2, '0');
+        const rzNum = Number(p_rz);
+        query = query.in('RAZAO', [String(p_rz).trim(), rzStr, ...(isNaN(rzNum) ? [] : [rzNum])]);
       }
       if (p_matr) query = query.eq('MATR', p_matr);
       if (p_motivo) query = query.eq('nosb_simulacao', p_motivo);
@@ -1036,15 +1082,16 @@ export async function getNosbSimulacao(params: {
 // =========================================================================
 
 export async function getControleHorario(params: {
-  p_ano: number;
-  p_mes: string;
+  p_ano?: number | null;
+  p_mes?: string | null;
   p_matr?: string | null;
   p_data?: string | null;
   rangeFrom?: number;
   rangeTo?: number;
 }): Promise<{ data: any[]; error: any }> {
   const { p_ano, p_mes, p_matr, p_data, rangeFrom, rangeTo } = params;
-  const cacheKey = `horario_${p_ano}_${p_mes}_${p_matr || 'all'}_${p_data || 'all'}`;
+  const targetDate = p_data ? formatDataBR(p_data) : null;
+  const cacheKey = `horario_v6_${p_ano || 'all'}_${p_mes || 'all'}_${p_matr || 'all'}_${targetDate || 'all'}`;
 
   const { data, error } = await fetchDadosGeraisPaginado(
     q => {
@@ -1052,23 +1099,66 @@ export async function getControleHorario(params: {
       if (p_ano) query = query.eq('ANO', p_ano);
       if (p_mes) query = query.eq('MÊS', p_mes);
       if (p_matr) query = query.eq('MATR', p_matr);
-      if (p_data) query = query.eq('DATA', p_data);
       return query;
     },
-    'MATR, DATA, HORA',
+    'MATR, DATA, HORA, TIPO, RAZAO',
     cacheKey
   );
 
   if (error) return { data: [], error };
 
-  const groups: { [key: string]: { matr: string; data: string; horas: number[]; total: number } } = {};
-  data.forEach(r => {
-    const matr = String(r.MATR || '');
-    const dt = String(r.DATA || '');
+  const groups: { 
+    [key: string]: { 
+      matr: string; 
+      data: string; 
+      horas: number[]; 
+      total: number;
+      leit_urb: number;
+      leit_povoado: number;
+      leit_rural: number;
+    } 
+  } = {};
+
+  (data || []).forEach(r => {
+    const rawRz = String(r.RAZAO || '').trim();
+    if (rawRz === '03' || rawRz === '3') return;
+
+    const matr = String(r.MATR || '').trim();
     if (!matr) return;
-    const key = `${matr}_${dt}`;
-    if (!groups[key]) groups[key] = { matr, data: dt, horas: [], total: 0 };
+
+    // Normalização completa da data, convertendo seriais do Excel (ex: 46302 -> 07/10/2026)
+    const dtFormatted = formatDataBR(r.DATA);
+    if (!dtFormatted) return;
+
+    // Se houver filtro de data selecionado, comparar a data padronizada
+    if (targetDate && dtFormatted !== targetDate) return;
+
+    const key = `${matr}_${dtFormatted}`;
+    if (!groups[key]) {
+      groups[key] = { 
+        matr, 
+        data: dtFormatted, 
+        horas: [], 
+        total: 0,
+        leit_urb: 0,
+        leit_povoado: 0,
+        leit_rural: 0
+      };
+    }
+
     groups[key].total++;
+
+    const tipoNorm = String(r.TIPO || '').trim().toLowerCase();
+    if (tipoNorm === 'urbano' || tipoNorm.startsWith('urb')) {
+      groups[key].leit_urb++;
+    } else if (tipoNorm === 'povoado' || tipoNorm.startsWith('pov')) {
+      groups[key].leit_povoado++;
+    } else if (tipoNorm === 'rural' || tipoNorm.startsWith('rur')) {
+      groups[key].leit_rural++;
+    } else {
+      groups[key].leit_urb++;
+    }
+
     const mins = timeStringToMinutes(r.HORA);
     if (mins !== null) {
       groups[key].horas.push(mins);
@@ -1085,13 +1175,17 @@ export async function getControleHorario(params: {
 
     return {
       f_matricula: g.matr,
-      f_data: g.data,
+      f_data: g.data, // formato DD/MM/AAAA garantido
       f_hora_inicial: minutesToTime(minMins),
       f_hora_final: minutesToTime(maxMins),
       f_tempo_servico: minutesToTime(diffMins),
       f_tempo_servico_formatado: minutesToTime(diffMins),
       f_media_leitura_hora: media.toFixed(1),
-      f_media_leitura_hora_inteiro: Math.round(media)
+      f_media_leitura_hora_inteiro: Math.round(media),
+      f_total_leituras: g.total,
+      f_leit_urb: g.leit_urb,
+      f_leit_povoado: g.leit_povoado,
+      f_leit_rural: g.leit_rural
     };
   }).sort((a, b) => a.f_matricula.localeCompare(b.f_matricula));
 
@@ -1215,7 +1309,7 @@ export async function getSequenciaLeitura(params: {
     f_reg: String(r.REG || ''),
     f_matr: String(r.MATR || ''),
     f_hora: String(r.HORA || ''),
-    f_data: String(r.DATA || ''),
+    f_data: formatDataBR(r.DATA),
     f_endereco: String(r['ENDEREÇO'] || ''),
     f_nl: String(r.NL || '')
   }));
