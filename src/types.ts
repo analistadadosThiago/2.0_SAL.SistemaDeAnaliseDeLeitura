@@ -67,7 +67,7 @@ export interface ConsultaLeitura {
 export interface ControleLeituristaData {
   ano: number;
   mes: string;
-  razao: number;
+  razao: number | string;
   ul: string;
   matr: string;
   leit_urb: number;
@@ -123,6 +123,7 @@ export interface NosbSimulacaoData {
 
 export interface ControleHorarioData {
   f_matricula: string;
+  f_razao?: string;
   f_data: string;
   f_hora_inicial: string;
   f_hora_final: string;

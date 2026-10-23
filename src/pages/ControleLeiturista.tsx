@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getMatriculas, getControleLeiturista } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getMatriculas, getControleLeiturista, clearInternalCache, onDatabaseUpdated } from '../lib/dadosGeraisService';
 import { ControleLeituristaData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -57,7 +57,6 @@ export default function ControleLeiturista() {
   // 1. Fetch Filter Options
   const fetchFilterOptions = useCallback(async (retryCount = 0) => {
     setLoadingFilters(true);
-    
     try {
       const [anosRes, mesesRes, matrsRes] = await Promise.all([
         getAnos(),
@@ -87,6 +86,10 @@ export default function ControleLeiturista() {
 
   useEffect(() => {
     fetchFilterOptions();
+    const unsub = onDatabaseUpdated(() => {
+      fetchFilterOptions();
+    });
+    return () => unsub();
   }, [fetchFilterOptions]);
 
   // 2. Handle Search
@@ -144,7 +147,7 @@ export default function ControleLeiturista() {
 
   // Top impediments summary for the Alert Modal
   const topImpedimentosColaboradores = useMemo(() => {
-    const grouped: { [key: string]: { razao: number; matr: string; impedimentos: number; leit_total: number; indicador: number } } = {};
+    const grouped: { [key: string]: { razao: number | string; matr: string; impedimentos: number; leit_total: number; indicador: number } } = {};
     results.forEach(r => {
       const key = `${r.razao}-${r.matr}`;
       if (!grouped[key]) {

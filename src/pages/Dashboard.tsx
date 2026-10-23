@@ -26,7 +26,8 @@ import {
   getDashboardChartPorRazao, 
   getDashboardChartPorMes, 
   getDashboardChartPorAno,
-  clearInternalCache
+  clearInternalCache,
+  onDatabaseUpdated
 } from '../lib/dadosGeraisService';
 import { DashboardResumo, DashboardLeituraTipo, DashboardFiltros } from '../types';
 
@@ -72,15 +73,11 @@ export default function Dashboard() {
   // 1. Fetch Filter Options with Direct Table Query
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
-    // 2. Limpa o cache interno para garantir que dados antigos não sejam retidos
-    clearInternalCache();
-
     try {
-      // 3. Força busca direta na tabela DadosGerais
       const [anosRes, mesesRes, razoesRes] = await Promise.all([
-        getAnos(true),
-        getMeses(true),
-        getRazoes(true)
+        getAnos(),
+        getMeses(),
+        getRazoes()
       ]);
 
       const anos = (anosRes.data || []).map(item => item.ano);
@@ -149,9 +146,9 @@ export default function Dashboard() {
         results = await getDashboardChartPorRazao(currentAno, currentMes, options.razoes);
       } else if (tab === 'mes') {
         const monthsToFetch = options.meses.length > 0 ? options.meses : [currentMes];
-        results = await getDashboardChartPorMes(currentAno, monthsToFetch, currentRz ? Number(currentRz) : null);
+        results = await getDashboardChartPorMes(currentAno, monthsToFetch, currentRz ? String(currentRz) : null);
       } else if (tab === 'ano') {
-        results = await getDashboardChartPorAno(options.anos, currentMes, currentRz ? Number(currentRz) : null);
+        results = await getDashboardChartPorAno(options.anos, currentMes, currentRz ? String(currentRz) : null);
         results = results.reverse();
       }
 
@@ -167,6 +164,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchFilterOptions();
+    const unsub = onDatabaseUpdated(() => {
+      fetchFilterOptions();
+    });
+    return () => unsub();
   }, [fetchFilterOptions]);
 
   // Update chart when tab changes (if already generated)

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getMatriculas, getControleEvidencias } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getMatriculas, getControleEvidencias, onDatabaseUpdated } from '../lib/dadosGeraisService';
 import { ControleEvidenciasData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -87,6 +87,10 @@ export default function ControleEvidencias() {
 
   useEffect(() => {
     fetchFilterOptions();
+    const unsub = onDatabaseUpdated(() => {
+      fetchFilterOptions();
+    });
+    return () => unsub();
   }, [fetchFilterOptions]);
 
   // 2. Handle Search

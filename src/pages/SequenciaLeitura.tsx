@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getMatriculas, getSequenciaLeitura, formatDataBR } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getMatriculas, getSequenciaLeitura, formatDataBR, onDatabaseUpdated } from '../lib/dadosGeraisService';
 import { SequenciaLeituraData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -86,6 +86,10 @@ export default function SequenciaLeitura() {
 
   useEffect(() => {
     fetchFilterOptions();
+    const unsub = onDatabaseUpdated(() => {
+      fetchFilterOptions();
+    });
+    return () => unsub();
   }, [fetchFilterOptions]);
 
   // 2. Handle Search
@@ -110,8 +114,8 @@ export default function SequenciaLeitura() {
 
     try {
       const { data, error: serviceError } = await getSequenciaLeitura({
-        p_ano: Number(ano) || 2026,
-        p_mes: mesSel || "Outubro",
+        p_ano: ano ? Number(ano) : null,
+        p_mes: mesSel || null,
         p_matr: matr || null,
         p_ul_de: ulDe ? Number(ulDe) : null,
         p_ul_para: ulPara ? Number(ulPara) : null

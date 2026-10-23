@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosCna, getDadosApresentacao, clearInternalCache } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosCna, getDadosApresentacao, clearInternalCache, onDatabaseUpdated } from '../lib/dadosGeraisService';
 import { ApresentacaoData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -65,12 +65,11 @@ export default function ControleApresentacao() {
   // 1. Fetch Filter Options
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
-    clearInternalCache();
     try {
       const [anosRes, mesesRes, razoesRes, matrsRes, cnasRes] = await Promise.all([
-        getAnos(true),
-        getMeses(true),
-        getRazoes(true),
+        getAnos(),
+        getMeses(),
+        getRazoes(),
         getMatriculas(),
         getMotivosCna()
       ]);
@@ -100,6 +99,10 @@ export default function ControleApresentacao() {
 
   useEffect(() => {
     fetchFilterOptions();
+    const unsub = onDatabaseUpdated(() => {
+      fetchFilterOptions();
+    });
+    return () => unsub();
   }, [fetchFilterOptions]);
 
   // 2. Handle Search
@@ -113,9 +116,9 @@ export default function ControleApresentacao() {
 
     try {
       const { data, error: serviceError } = await getDadosApresentacao({
-        p_ano: Number(ano) || 2026,
-        p_mes: mes || "Outubro",
-        p_rz: razao ? Number(razao) : null,
+        p_ano: ano ? Number(ano) : null,
+        p_mes: mes || null,
+        p_rz: razao || null,
         p_matr: matr || null,
         p_cna: motivo || null
       });

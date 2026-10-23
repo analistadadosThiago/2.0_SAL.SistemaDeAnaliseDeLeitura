@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosSimulacao, getNosbSimulacao, clearInternalCache } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getRazoes, getMatriculas, getMotivosSimulacao, getNosbSimulacao, clearInternalCache, onDatabaseUpdated } from '../lib/dadosGeraisService';
 import { NosbSimulacaoData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -57,12 +57,11 @@ export default function NosbSimulacao() {
   // 1. Fetch Filter Options
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
-    clearInternalCache();
     try {
       const [anosRes, mesesRes, razoesRes, matrsRes, motivosRes] = await Promise.all([
-        getAnos(true),
-        getMeses(true),
-        getRazoes(true),
+        getAnos(),
+        getMeses(),
+        getRazoes(),
         getMatriculas(),
         getMotivosSimulacao()
       ]);
@@ -92,6 +91,10 @@ export default function NosbSimulacao() {
 
   useEffect(() => {
     fetchFilterOptions();
+    const unsub = onDatabaseUpdated(() => {
+      fetchFilterOptions();
+    });
+    return () => unsub();
   }, [fetchFilterOptions]);
 
   // 2. Handle Search

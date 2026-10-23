@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { getAnos, getMeses, getMatriculas, getControleHorario, formatDataBR } from '../lib/dadosGeraisService';
+import { getAnos, getMeses, getRazoes, getMatriculas, getControleHorario, formatDataBR, clearInternalCache, onDatabaseUpdated } from '../lib/dadosGeraisService';
 import { ControleHorarioData } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -31,22 +31,25 @@ export default function ControleHorario() {
   const [options, setOptions] = useState<{
     anos: string[];
     meses: string[];
+    razoes: string[];
     matriculas: string[];
   }>({
     anos: [],
     meses: [],
+    razoes: [],
     matriculas: []
   });
 
   // Selected Filters
   const [ano, setAno] = useState<string | null>(null);
   const [mes, setMes] = useState<string | null>(null);
+  const [razao, setRazao] = useState<string | null>(null);
   const [matr, setMatr] = useState<string | null>(null);
   const [dataSel, setDataSel] = useState<string>('');
 
   // Data State
   const [results, setResults] = useState<ControleHorarioData[]>([]);
-  const [activeTab, setActiveTab] = useState<'matricula' | 'mes'>('matricula');
+  const [activeTab, setActiveTab] = useState<'matricula' | 'mes' | 'razao'>('matricula');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
 
@@ -67,24 +70,27 @@ export default function ControleHorario() {
   const fetchFilterOptions = useCallback(async () => {
     setLoadingFilters(true);
     try {
-      const [anosRes, mesesRes, matrsRes] = await Promise.all([
+      const [anosRes, mesesRes, razoesRes, matrsRes] = await Promise.all([
         getAnos(),
         getMeses(),
+        getRazoes(),
         getMatriculas()
       ]);
 
       const anos = (anosRes.data || []).map(item => String(item.ano));
       const meses = (mesesRes.data || []).map(item => item.mes);
+      const razoes = (razoesRes.data || []).map(item => String(item.rz));
       const matriculas = (matrsRes.data || []).map(item => item.matr);
 
-      setOptions({ anos, meses, matriculas });
-      if (anos.length > 0) setAno(anos[0]);
-      if (meses.length > 0) setMes(meses[0]);
+      setOptions({ anos, meses, razoes, matriculas });
+      setAno(prev => (prev && anos.includes(prev)) ? prev : (anos[0] || null));
+      setMes(prev => (prev && meses.includes(prev)) ? prev : (meses[0] || null));
     } catch (e) {
       console.error('Erro ao buscar filtros:', e);
       setOptions({
         anos: [],
         meses: [],
+        razoes: [],
         matriculas: []
       });
     } finally {
@@ -92,12 +98,8 @@ export default function ControleHorario() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchFilterOptions();
-  }, [fetchFilterOptions]);
-
   // 2. Handle Search
-  const handleGenerate = async () => {
+  const handleGenerate = useCallback(async (overrideRz?: string | null, overrideData?: string | null) => {
     setError(null);
     setLoading(true);
     setHasGenerated(false);
@@ -105,12 +107,16 @@ export default function ControleHorario() {
     setCurrentPage(1);
     setFetchProgress(0);
 
+    const activeRz = overrideRz !== undefined ? overrideRz : razao;
+    const activeData = overrideData !== undefined ? overrideData : dataSel;
+
     try {
       const { data, error: serviceError } = await getControleHorario({
         p_ano: ano ? Number(ano) : null,
         p_mes: mes || null,
+        p_rz: activeRz || null,
         p_matr: matr || null,
-        p_data: dataSel || null
+        p_data: activeData || null
       });
 
       if (serviceError) throw serviceError;
@@ -143,6 +149,7 @@ export default function ControleHorario() {
 
         return {
           f_matricula: String(r.f_matricula || ""),
+          f_razao: String(r.f_razao || ""),
           f_data: formatDataBR(r.f_data || ""),
           f_hora_inicial: horaInicial,
           f_hora_final: horaFinal,
@@ -165,11 +172,23 @@ export default function ControleHorario() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [ano, mes, razao, matr, dataSel]);
+
+  useEffect(() => {
+    fetchFilterOptions();
+    const unsub = onDatabaseUpdated(() => {
+      fetchFilterOptions();
+      if (hasGenerated) {
+        handleGenerate();
+      }
+    });
+    return () => unsub();
+  }, [fetchFilterOptions, hasGenerated, handleGenerate]);
 
   const handleReset = () => {
     setAno(options.anos[0] || null);
     setMes(options.meses[0] || null);
+    setRazao(null);
     setMatr(null);
     setDataSel('');
     setResults([]);
@@ -199,6 +218,22 @@ export default function ControleHorario() {
       grouped[key].atividade += r.f_media_leitura_hora_inteiro;
     });
     return Object.values(grouped).sort((a, b) => a.matricula.localeCompare(b.matricula) || a.mes.localeCompare(b.mes));
+  }, [results]);
+
+  const groupedByRazao = useMemo(() => {
+    const grouped: { [key: string]: { matricula: string, razao: string, tempoServicoMin: number, atividade: number } } = {};
+    results.forEach(r => {
+      const rz = r.f_razao || '-';
+      const key = `${r.f_matricula}_${rz}`;
+      if (!grouped[key]) {
+        grouped[key] = { matricula: r.f_matricula, razao: rz, tempoServicoMin: 0, atividade: 0 };
+      }
+      if (r.f_tempo_servico_formatado !== "Leitura Única") {
+        grouped[key].tempoServicoMin += timeToMinutes(r.f_tempo_servico_formatado);
+      }
+      grouped[key].atividade += r.f_media_leitura_hora_inteiro;
+    });
+    return Object.values(grouped).sort((a, b) => a.matricula.localeCompare(b.matricula) || Number(a.razao) - Number(b.razao));
   }, [results]);
 
   // 4. Totals for Footer
@@ -339,7 +374,11 @@ export default function ControleHorario() {
   };
 
   // 6. Pagination
-  const currentResults = activeTab === 'matricula' ? results : groupedByMes;
+  const currentResults = activeTab === 'matricula' 
+    ? results 
+    : activeTab === 'mes' 
+      ? groupedByMes 
+      : groupedByRazao;
   const totalPages = Math.ceil(currentResults.length / pageSize);
   const paginatedResults = currentResults.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -352,9 +391,14 @@ export default function ControleHorario() {
     let tableRows: any[] = [];
 
     if (activeTab === 'matricula') {
-      tableColumn = ["MATRÍCULA", "DATA", "HORA INICIAL", "HORA FINAL", "TEMPO DE SERVIÇO", "TEMPO ATIVIDADE / LEITURA"];
+      tableColumn = ["MATRÍCULA", "RAZÃO", "DATA", "HORA INICIAL", "HORA FINAL", "TEMPO DE SERVIÇO", "TEMPO ATIVIDADE / LEITURA"];
       tableRows = results.map(r => [
-        r.f_matricula, r.f_data, r.f_hora_inicial, r.f_hora_final, r.f_tempo_servico_formatado, r.f_media_leitura_hora_inteiro
+        r.f_matricula, r.f_razao || '-', r.f_data, r.f_hora_inicial, r.f_hora_final, r.f_tempo_servico_formatado, r.f_media_leitura_hora_inteiro
+      ]);
+    } else if (activeTab === 'razao') {
+      tableColumn = ["MATRÍCULA", "RAZÃO", "TEMPO DE SERVIÇO (SOMA)", "TEMPO ATIVIDADE / LEITURA (SOMA)"];
+      tableRows = groupedByRazao.map(r => [
+        r.matricula, r.razao, minutesToTime(r.tempoServicoMin), r.atividade
       ]);
     } else {
       tableColumn = ["MATRÍCULA", "MÊS", "TEMPO DE SERVIÇO (SOMA)", "TEMPO ATIVIDADE / LEITURA (SOMA)"];
@@ -381,12 +425,29 @@ export default function ControleHorario() {
   };
 
   const exportToExcel = () => {
-    const dataToExport = activeTab === 'matricula' ? results : groupedByMes.map(r => ({
-      Matricula: r.matricula,
-      Mes: r.mes,
-      TempoServico: minutesToTime(r.tempoServicoMin),
-      Atividade: r.atividade
-    }));
+    const dataToExport = activeTab === 'matricula' 
+      ? results.map(r => ({
+          Matricula: r.f_matricula,
+          Razao: r.f_razao || '-',
+          Data: r.f_data,
+          HoraInicial: r.f_hora_inicial,
+          HoraFinal: r.f_hora_final,
+          TempoServico: r.f_tempo_servico_formatado,
+          TempoAtividade: r.f_media_leitura_hora_inteiro
+        }))
+      : activeTab === 'razao'
+        ? groupedByRazao.map(r => ({
+            Matricula: r.matricula,
+            Razao: r.razao,
+            TempoServico: minutesToTime(r.tempoServicoMin),
+            Atividade: r.atividade
+          }))
+        : groupedByMes.map(r => ({
+            Matricula: r.matricula,
+            Mes: r.mes,
+            TempoServico: minutesToTime(r.tempoServicoMin),
+            Atividade: r.atividade
+          }));
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Dados");
@@ -427,6 +488,24 @@ export default function ControleHorario() {
           </div>
 
           <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Razão</span>
+            <select 
+              value={razao || ''} 
+              onChange={(e) => {
+                const val = e.target.value || null;
+                setRazao(val);
+                if (hasGenerated || val) {
+                  handleGenerate(val, dataSel);
+                }
+              }}
+              className="text-sm border-zinc-200 focus:ring-blue-500 focus:border-blue-500 bg-zinc-50 rounded-xl px-4 py-2 font-semibold text-zinc-700 min-w-[120px] transition-all"
+            >
+              <option value="">Todas</option>
+              {options.razoes.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
             <span className="text-[10px] font-bold text-zinc-400 uppercase ml-1">Matrícula</span>
             <select 
               value={matr || ''} 
@@ -443,13 +522,19 @@ export default function ControleHorario() {
             <input 
               type="date"
               value={dataSel}
-              onChange={(e) => setDataSel(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setDataSel(val);
+                if (hasGenerated || val) {
+                  handleGenerate(razao, val);
+                }
+              }}
               className="text-sm border-zinc-200 focus:ring-blue-500 focus:border-blue-500 bg-zinc-50 rounded-xl px-4 py-2 font-semibold text-zinc-700 transition-all"
             />
           </div>
 
           <button 
-            onClick={handleGenerate}
+            onClick={() => handleGenerate()}
             disabled={loading || loadingFilters}
             className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-blue-100 active:scale-95 disabled:opacity-50 disabled:shadow-none mt-auto h-[46px]"
           >
@@ -512,7 +597,7 @@ export default function ControleHorario() {
                 </div>
 
                 <div className="flex bg-zinc-100 p-1 rounded-xl">
-                  {(['matricula', 'mes'] as const).map((tab) => (
+                  {(['matricula', 'mes', 'razao'] as const).map((tab) => (
                     <button
                       key={tab}
                       onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
@@ -523,7 +608,7 @@ export default function ControleHorario() {
                           : "text-zinc-500 hover:text-zinc-700"
                       )}
                     >
-                      {tab === 'matricula' ? 'Por Matrícula' : 'Por Mês'}
+                      {tab === 'matricula' ? 'Por Matrícula' : tab === 'mes' ? 'Por Mês' : 'Por Razão'}
                     </button>
                   ))}
                 </div>
@@ -548,11 +633,19 @@ export default function ControleHorario() {
                     {activeTab === 'matricula' ? (
                       <>
                         <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Matrícula</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Razão</th>
                         <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Data</th>
                         <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Hora Inicial</th>
                         <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Hora Final</th>
                         <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Tempo de Serviço</th>
                         <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Tempo Atividade / Leitura</th>
+                      </>
+                    ) : activeTab === 'razao' ? (
+                      <>
+                        <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Matrícula</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Razão</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Tempo de Serviço (Soma)</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-100">Tempo Atividade / Leitura (Soma)</th>
                       </>
                     ) : (
                       <>
@@ -570,11 +663,19 @@ export default function ControleHorario() {
                       {activeTab === 'matricula' ? (
                         <>
                           <td className="px-6 py-4 text-sm text-zinc-700 font-bold">{r.f_matricula}</td>
-                          <td className="px-6 py-4 text-sm text-zinc-600 font-medium">{r.f_data}</td>
+                          <td className="px-6 py-4 text-sm text-zinc-700 font-bold">{r.f_razao || '-'}</td>
+                          <td className="px-6 py-4 text-sm text-zinc-600 font-medium">{formatDataBR(r.f_data)}</td>
                           <td className="px-6 py-4 text-sm text-zinc-600 font-medium">{r.f_hora_inicial}</td>
                           <td className="px-6 py-4 text-sm text-zinc-600 font-medium">{r.f_hora_final}</td>
                           <td className="px-6 py-4 text-sm font-black text-blue-600">{r.f_tempo_servico_formatado}</td>
                           <td className="px-6 py-4 text-sm text-zinc-600 font-medium">{r.f_media_leitura_hora_inteiro}</td>
+                        </>
+                      ) : activeTab === 'razao' ? (
+                        <>
+                          <td className="px-6 py-4 text-sm text-zinc-700 font-bold">{r.matricula}</td>
+                          <td className="px-6 py-4 text-sm text-zinc-700 font-bold">{r.razao}</td>
+                          <td className="px-6 py-4 text-sm font-black text-blue-600">{minutesToTime(r.tempoServicoMin)}</td>
+                          <td className="px-6 py-4 text-sm text-zinc-600 font-medium">{r.atividade}</td>
                         </>
                       ) : (
                         <>
@@ -590,7 +691,7 @@ export default function ControleHorario() {
                 {activeTab === 'matricula' && (
                   <tfoot className="bg-zinc-50/80 font-bold">
                     <tr>
-                      <td colSpan={4} className="px-6 py-4 text-right text-xs text-zinc-500 uppercase tracking-wider">Totais Acumulados:</td>
+                      <td colSpan={5} className="px-6 py-4 text-right text-xs text-zinc-500 uppercase tracking-wider">Totais Acumulados:</td>
                       <td className="px-6 py-4 text-sm text-blue-700 font-black">{totals.tempoServico}</td>
                       <td className="px-6 py-4 text-sm text-zinc-900 font-black">{totals.atividade}</td>
                     </tr>

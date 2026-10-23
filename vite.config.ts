@@ -7,18 +7,18 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
 
   const sanitizeUrl = (url?: string) => {
-    const defaultUrl = 'https://zeipsxfnmkhrcqkxvddk.supabase.co';
+    const defaultUrl = 'https://giruouwvitrceivuxniu.supabase.co';
     if (!url) return defaultUrl;
     let clean = url.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
-    if (clean.includes('giruouwvitrceivuxniu') || !clean.startsWith('http')) {
+    if (!clean.startsWith('http')) {
       return defaultUrl;
     }
     return clean || defaultUrl;
   };
 
   const sanitizeKey = (key?: string) => {
-    const defaultKey = 'sb_publishable_6aZTdeKjeASNqrJswJu9XQ_FD98xZpJ';
-    if (!key || key.includes('undefined') || key === 'sb_publishable_7ikVHkk3N6N7uv2-cmSsTg_VMgP9IMO' || key === 'MY_SUPABASE_KEY') return defaultKey;
+    const defaultKey = 'sb_publishable_fwlqlKAQo4_4jAyI6YRJdw_eGWVJyxw';
+    if (!key || key.includes('undefined') || key === 'MY_SUPABASE_KEY') return defaultKey;
     return key.trim();
   };
 
