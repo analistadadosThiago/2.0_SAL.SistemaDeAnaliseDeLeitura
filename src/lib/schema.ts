@@ -1,64 +1,40 @@
-/*
-  SQL Schema for SAL - Sistema de Análise de Leitura
-  Run this in your Supabase SQL Editor to set up the tables.
+/**
+ * Schema e Metadados do Google BigQuery para o SAL - Sistema de Acompanhamento de Leitura
+ * 
+ * Projeto BigQuery: leiturabd
+ * Dataset: dados_diarios
+ * Tabela Principal: DadosGerais
+ *
+ * Colunas Oficiais:
+ * - MÊS: Mês de referência (ex: 'Outubro', 'Setembro')
+ * - ANO: Ano numérico de referência (ex: 2026)
+ * - INSTALAÇÃO: Número identificador da instalação do cliente
+ * - MEDIDOR: Número/código de série do medidor
+ * - REG: Regional / Setor
+ * - RAZAO: Razão da leitura ('01' a '10')
+ * - RZ_UL_LV: Código composto Razão + UL + Livro
+ * - UL: Unidade de Leitura
+ * - FOTO: Status da evidência fotográfica ('OK', 'FALHA')
+ * - TIPO: Tipo do setor ('Urbano', 'Rural', 'Povoado')
+ * - MATR: Matrícula do leiturista
+ * - NL: Código de impedimento / Não Leitura (ex: '3201', '3301', '00')
+ * - DATA: Data da leitura (DD/MM/AAAA ou ISO)
+ * - HORA: Hora da leitura (HH:MM:SS)
+ * - ENDEREÇO: Endereço da instalação
+ * - LEITURA: Valor numérico da medição
+ * - CONSUMO: Consumo apurado no período
+ * - nosb_impedimento: Motivo descritivo do impedimento de leitura
+ * - nosb_simulacao: Motivo de simulação de leitura
+ * - digitacao: Indicador numérico de digitação (1, 2, 3...)
+ * - cna: Motivo de Consumo Não Autorizado
+ * - consistencia: Status de consistência da leitura
+ */
 
-  -- 1. Leituristas
-  CREATE TABLE leituristas (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    nome TEXT NOT NULL,
-    matricula TEXT UNIQUE NOT NULL,
-    setor TEXT,
-    status TEXT DEFAULT 'Ativo' CHECK (status IN ('Ativo', 'Inativo')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-  );
+export const BIGQUERY_CONFIG = {
+  projectId: 'leiturabd',
+  dataset: 'dados_diarios',
+  table: 'DadosGerais',
+  endpoint: '/.netlify/functions/get-data'
+};
 
-  -- 2. Leituras
-  CREATE TABLE leituras (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    data TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    medidor TEXT NOT NULL,
-    valor NUMERIC,
-    status TEXT DEFAULT 'Pendente' CHECK (status IN ('Concluída', 'Pendente', 'Erro')),
-    leiturista_id UUID REFERENCES leituristas(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-  );
-
-  -- 3. Evidências
-  CREATE TABLE evidencias (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    leitura_id UUID REFERENCES leituras(id),
-    foto_url TEXT,
-    comentarios TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-  );
-
-  -- 4. Impressões
-  CREATE TABLE impressoes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    relatorio_nome TEXT,
-    usuario_id UUID,
-    data_impressao TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-  );
-
-  -- 5. Horários
-  CREATE TABLE horarios (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    leiturista_id UUID REFERENCES leituristas(id),
-    entrada TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    saida TIMESTAMP WITH TIME ZONE,
-    horas_trabalhadas NUMERIC,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-  );
-
-  -- 6. Sequência de Leitura
-  CREATE TABLE sequencia_leitura (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    rota_nome TEXT,
-    ordem INTEGER,
-    endereco TEXT,
-    status TEXT DEFAULT 'Aguardando',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-  );
-*/
-
-export const SCHEMA_INFO = "Schema documentation is in the comments of this file.";
+export const SCHEMA_INFO = "Schema oficial do Google BigQuery (leiturabd.dados_diarios.DadosGerais).";

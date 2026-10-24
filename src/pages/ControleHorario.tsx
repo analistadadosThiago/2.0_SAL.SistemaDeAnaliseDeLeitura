@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Chart from 'react-apexcharts';
 import { 
   AlertCircle, 
@@ -174,16 +174,21 @@ export default function ControleHorario() {
     }
   }, [ano, mes, razao, matr, dataSel]);
 
+  const handleGenerateRef = useRef(handleGenerate);
+  handleGenerateRef.current = handleGenerate;
+  const hasGeneratedRef = useRef(hasGenerated);
+  hasGeneratedRef.current = hasGenerated;
+
   useEffect(() => {
     fetchFilterOptions();
     const unsub = onDatabaseUpdated(() => {
       fetchFilterOptions();
-      if (hasGenerated) {
-        handleGenerate();
+      if (hasGeneratedRef.current) {
+        handleGenerateRef.current();
       }
     });
     return () => unsub();
-  }, [fetchFilterOptions, hasGenerated, handleGenerate]);
+  }, [fetchFilterOptions]);
 
   const handleReset = () => {
     setAno(options.anos[0] || null);

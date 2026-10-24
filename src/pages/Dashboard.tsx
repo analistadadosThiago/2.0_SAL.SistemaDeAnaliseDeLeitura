@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Chart from 'react-apexcharts';
 import { 
   CheckCircle2, 
@@ -162,10 +162,18 @@ export default function Dashboard() {
     }
   };
 
+  const handleGenerateReportRef = useRef(handleGenerateReport);
+  handleGenerateReportRef.current = handleGenerateReport;
+  const hasGeneratedRef = useRef(hasGenerated);
+  hasGeneratedRef.current = hasGenerated;
+
   useEffect(() => {
     fetchFilterOptions();
     const unsub = onDatabaseUpdated(() => {
       fetchFilterOptions();
+      if (hasGeneratedRef.current) {
+        handleGenerateReportRef.current();
+      }
     });
     return () => unsub();
   }, [fetchFilterOptions]);

@@ -6,33 +6,38 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
 
-  const sanitizeUrl = (url?: string) => {
-    const defaultUrl = 'https://giruouwvitrceivuxniu.supabase.co';
-    if (!url) return defaultUrl;
-    let clean = url.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
-    if (!clean.startsWith('http')) {
-      return defaultUrl;
+  const bigqueryProjectId = env.BIGQUERY_PROJECT_ID || 'leiturabd';
+  const bigqueryDataset = env.BIGQUERY_DATASET || 'dados_diarios';
+
+  const netlifyFunctionsDevPlugin = () => ({
+    name: 'netlify-functions-dev-middleware',
+    configureServer(server: any) {
+      server.middlewares.use((req: any, res: any, next: any) => {
+        const url = req.url || '';
+        if (url.startsWith('/.netlify/functions/get-data')) {
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.end(JSON.stringify({
+            success: true,
+            source: 'Google BigQuery',
+            project: bigqueryProjectId,
+            dataset: bigqueryDataset,
+            message: 'Endpoint get-data ativo para BigQuery leiturabd.dados_diarios',
+            data: []
+          }));
+          return;
+        }
+        next();
+      });
     }
-    return clean || defaultUrl;
-  };
-
-  const sanitizeKey = (key?: string) => {
-    const defaultKey = 'sb_publishable_fwlqlKAQo4_4jAyI6YRJdw_eGWVJyxw';
-    if (!key || key.includes('undefined') || key === 'MY_SUPABASE_KEY') return defaultKey;
-    return key.trim();
-  };
-
-  const supabaseUrl = sanitizeUrl(env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL);
-  const supabaseKey = sanitizeKey(env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+  });
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), netlifyFunctionsDevPlugin()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
-      'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseKey),
-      'import.meta.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(supabaseUrl),
-      'import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(supabaseKey),
+      'process.env.BIGQUERY_PROJECT_ID': JSON.stringify(bigqueryProjectId),
+      'process.env.BIGQUERY_DATASET': JSON.stringify(bigqueryDataset),
     },
     resolve: {
       alias: {

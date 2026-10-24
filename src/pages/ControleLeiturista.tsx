@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Chart from 'react-apexcharts';
 import { 
   Users, 
@@ -84,10 +84,17 @@ export default function ControleLeiturista() {
     }
   }, [ano, mes]);
 
+  const handleGenerateRef = useRef<() => void>(() => {});
+  const hasGeneratedRef = useRef(hasGenerated);
+  hasGeneratedRef.current = hasGenerated;
+
   useEffect(() => {
     fetchFilterOptions();
     const unsub = onDatabaseUpdated(() => {
       fetchFilterOptions();
+      if (hasGeneratedRef.current) {
+        handleGenerateRef.current();
+      }
     });
     return () => unsub();
   }, [fetchFilterOptions]);
@@ -144,6 +151,7 @@ export default function ControleLeiturista() {
       setLoading(false);
     }
   };
+  handleGenerateRef.current = handleGenerate;
 
   // Top impediments summary for the Alert Modal
   const topImpedimentosColaboradores = useMemo(() => {
