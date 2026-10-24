@@ -10,13 +10,25 @@ const bigquery = new BigQuery({
 
 exports.handler = async function (event, context) {
   try {
-    // IMPORTANTE: Substitua 'seu_dataset.sua_tabela' pelos nomes reais no seu BigQuery
-    const query = `SELECT * FROM \`leiturabd.seu_dataset.sua_tabela\` LIMIT 1000`;
+    // Permite receber um parâmetro de filtro (ex: por chave/ID) se enviado pelo front-end
+    const keyFilter = event.queryStringParameters && event.queryStringParameters.key;
 
-    const [rows] = await bigquery.query({
-      query: query,
-      location: 'US', // Ajuste a localização se necessário (ex: 'southamerica-east1')
-    });
+    let query = `SELECT * FROM \`leiturabd.dados_diarios.sua_tabela\` `;
+    const options = {
+      query: '',
+      location: 'US',
+    };
+
+    if (keyFilter) {
+      query += `WHERE sua_coluna_chave = @keyValue LIMIT 1000`;
+      options.query = query;
+      options.params = { keyValue: keyFilter };
+    } else {
+      query += `LIMIT 1000`;
+      options.query = query;
+    }
+
+    const [rows] = await bigquery.query(options);
 
     return {
       statusCode: 200,
