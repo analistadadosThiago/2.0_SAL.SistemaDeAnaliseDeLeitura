@@ -404,7 +404,7 @@ export async function getDashboardChartPorAno(
 export async function getControleLeiturista(params: { p_ano: number; p_mes: string; p_rz?: any; p_matr?: any }) {
   const { p_ano, p_mes, p_rz, p_matr } = params;
   const allData = await getAllDadosGerais();
-  const filtered = allData.filter(r => matchAno(r.ANO, p_ano) && matchMes(r['MÊS'], p_mes) && matchRazao(r.RAZAO, p_rz) && matchMatr(r.MATR, p_matr));
+  const filtered = allData.filter(r => matchAno(r.ANO, p_ano) && matchMes(r['MÊS'], p_mes) && matchRazao(r.RAZAO, rz) && matchMatr(r.MATR, p_matr));
 
   const groups: { [key: string]: any } = {};
   filtered.forEach(r => {
@@ -427,4 +427,26 @@ export async function getControleLeiturista(params: { p_ano: number; p_mes: stri
 
 export async function getControleEvidencias(params: { p_ano: number; p_mes: string; p_rz?: any; p_matr?: any }) {
   return getControleLeiturista(params);
+}
+
+// Função adicionada para suportar a Consulta.tsx
+export async function consultaLeituras(filters?: {
+  ano?: number | null;
+  mes?: string | null;
+  rz?: number | string | null;
+  matr?: string | null;
+}): Promise<{ data: any[]; error: any }> {
+  try {
+    const allData = await getAllDadosGerais();
+    const data = allData.filter(r => {
+      if (filters?.ano && !matchAno(r.ANO, filters.ano)) return false;
+      if (filters?.mes && !matchMes(r['MÊS'], filters.mes)) return false;
+      if (filters?.rz && !matchRazao(r.RAZAO, filters.rz)) return false;
+      if (filters?.matr && !matchMatr(r.MATR, filters.matr)) return false;
+      return true;
+    });
+    return { data, error: null };
+  } catch (err: any) {
+    return { data: [], error: err };
+  }
 }
