@@ -2,15 +2,12 @@ import { DashboardResumo, DashboardLeituraTipo } from '../types';
 
 /**
  * SAL - Serviço Central de Dados para a tabela `dados_diarios` no Google BigQuery
- * via função serverless do Netlify.
  */
 
-// Armazenamento mestre dos dados na memória global da aplicação
 let masterDadosGerais: any[] | null = null;
 let inFlightMasterPromise: Promise<any[]> | null = null;
 let distinctFiltersCache: DistinctFiltersResult | null = null;
 
-// Sistema de eventos para notificar telas e relatórios em tempo real
 type DatabaseListener = (data: any[]) => void;
 const dbListeners: Set<DatabaseListener> = new Set();
 
@@ -21,15 +18,10 @@ export function onDatabaseUpdated(cb: DatabaseListener): () => void {
   };
 }
 
-let lastCheckTime = 0;
 export async function checkDatabaseGrowth(): Promise<boolean> {
-  const now = Date.now();
-  if (now - lastCheckTime < 15000) return false;
-  lastCheckTime = now;
   return false;
 }
 
-// Inicia verificação periódica de background no navegador
 if (typeof window !== 'undefined') {
   setInterval(() => {
     checkDatabaseGrowth().catch(() => {});
@@ -55,9 +47,6 @@ function notifyListeners() {
   });
 }
 
-/**
- * BUSCA GLOBAL E IRRESTRITA DE TODOS OS DADOS DO BIGQUERY VIA NETLIFY FUNCTION:
- */
 export async function getAllDadosGerais(forceRefresh: boolean = false): Promise<any[]> {
   if (!forceRefresh && masterDadosGerais && masterDadosGerais.length > 0) {
     return masterDadosGerais;
@@ -77,7 +66,6 @@ export async function getAllDadosGerais(forceRefresh: boolean = false): Promise<
       const rawData = await response.json();
       let todosOsDados = Array.isArray(rawData) ? rawData : [];
 
-      // Normalização dos campos principais
       for (let i = 0; i < todosOsDados.length; i++) {
         const row = todosOsDados[i];
         if (row) {
@@ -93,7 +81,7 @@ export async function getAllDadosGerais(forceRefresh: boolean = false): Promise<
 
       return masterDadosGerais;
     } catch (err: any) {
-      console.error('Erro ao carregar base total de DadosGerais do BigQuery:', err);
+      console.error('Erro ao carregar base total do BigQuery:', err);
       return masterDadosGerais || [];
     } finally {
       inFlightMasterPromise = null;
@@ -103,11 +91,8 @@ export async function getAllDadosGerais(forceRefresh: boolean = false): Promise<
   return inFlightMasterPromise;
 }
 
-/**
- * Função de compatibilidade: delega para a busca global irrestrita
- */
 export async function fetchDadosGeraisPaginado(
-  _applyFilters?: (query: any) => any,
+  _applyFilters?: any,
   _selectCols: string = '*',
   _cacheKey?: string,
   forceRefresh: boolean = false
@@ -120,9 +105,6 @@ export async function fetchDadosGeraisPaginado(
   }
 }
 
-/**
- * Invalida e limpa qualquer cache em memória
- */
 export function clearInternalCache() {
   masterDadosGerais = null;
   inFlightMasterPromise = null;
@@ -136,10 +118,6 @@ export function clearInternalCache() {
     }
   }
 }
-
-// =========================================================================
-// HELPERS DE NORMALIZAÇÃO E COMPARAÇÃO PRECISA DE FILTROS
-// =========================================================================
 
 export function normalizeRazao(val: any): string {
   if (val === null || val === undefined) return '';
@@ -190,10 +168,6 @@ export function matchMatr(rowMatr: any, filterMatr: string | null | undefined): 
   if (!filterMatr || filterMatr.toLowerCase() === 'todas' || filterMatr.toLowerCase() === 'todos' || filterMatr.trim() === '') return true;
   return String(rowMatr || '').trim().toLowerCase() === filterMatr.trim().toLowerCase();
 }
-
-// =========================================================================
-// FILTROS DINÂMICOS E DASHBOARD
-// =========================================================================
 
 export async function getDistinctFilters(forceRefresh: boolean = false): Promise<DistinctFiltersResult> {
   if (!forceRefresh && distinctFiltersCache) {
@@ -273,7 +247,7 @@ export function isImpedimentoNL(nl: any): boolean {
   return CODIGOS_IMPEDIMENTO_NL.has(String(nl).trim());
 }
 
-export async function getDashboardResumo(ano?: number | null, mes?: string | null, rz?: number | string | null) {
+export async function getDashboardResumo(ano?: number | null, mes?: string | null, rz?: number | string | null): Promise<{ data: DashboardResumo[]; error: any }> {
   const allData = await getAllDadosGerais();
   const filtered = allData.filter(r => matchAno(r.ANO, ano) && matchMes(r['MÊS'], mes) && matchRazao(r.RAZAO, rz));
 
@@ -291,7 +265,7 @@ export async function getDashboardResumo(ano?: number | null, mes?: string | nul
   return { data: [{ leituras_a_realizar, leituras_nao_realizadas, leituras_realizadas, percentual_impedimento }], error: null };
 }
 
-export async function getDashboardLeiturasPorTipo(ano?: number | null, mes?: string | null, rz?: number | string | null) {
+export async function getDashboardLeiturasPorTipo(ano?: number | null, mes?: string | null, rz?: number | string | null): Promise<{ data: DashboardLeituraTipo[]; error: any }> {
   const allData = await getAllDadosGerais();
   const filtered = allData.filter(r => matchAno(r.ANO, ano) && matchMes(r['MÊS'], mes) && matchRazao(r.RAZAO, rz));
 
@@ -319,6 +293,112 @@ export async function getDashboardLeiturasPorTipo(ano?: number | null, mes?: str
   });
 
   return { data: list, error: null };
+}
+
+export async function getDashboardChartPorRazao(
+  ano: number,
+  mes: string,
+  razoes: (number | string)[]
+): Promise<(DashboardResumo & { label: string })[]> {
+  const allData = await getAllDadosGerais();
+  const filtered = allData.filter(r => matchAno(r.ANO, ano) && matchMes(r['MÊS'], mes));
+
+  const cleanRazoes = (razoes || []).map(r => normalizeRazao(r)).filter(Boolean);
+  const groups: { [rz: string]: { total: number; impedimentos: number } } = {};
+  cleanRazoes.forEach(r => {
+    groups[r] = { total: 0, impedimentos: 0 };
+  });
+
+  filtered.forEach(r => {
+    const rawRz = normalizeRazao(r.RAZAO);
+    if (!rawRz) return;
+    const matchingKey = cleanRazoes.find(k => matchRazao(rawRz, k)) || rawRz;
+    if (!cleanRazoes.includes(matchingKey)) return;
+    if (!groups[matchingKey]) groups[matchingKey] = { total: 0, impedimentos: 0 };
+    if (isValidInstalacao(r['INSTALAÇÃO'])) groups[matchingKey].total++;
+    if (isImpedimentoNL(r.NL)) groups[matchingKey].impedimentos++;
+  });
+
+  return cleanRazoes.map(r => {
+    const g = groups[r] || { total: 0, impedimentos: 0 };
+    const realizadas = Math.max(0, g.total - g.impedimentos);
+    const perc = g.total > 0 ? (g.impedimentos / g.total) * 100 : 0;
+    return {
+      label: `RZ ${r}`,
+      leituras_a_realizar: g.total,
+      leituras_realizadas: realizadas,
+      leituras_nao_realizadas: g.impedimentos,
+      percentual_impedimento: perc
+    };
+  });
+}
+
+export async function getDashboardChartPorMes(
+  ano: number,
+  meses: string[],
+  rz: number | string | null
+): Promise<(DashboardResumo & { label: string })[]> {
+  const allData = await getAllDadosGerais();
+  const filtered = allData.filter(r => matchAno(r.ANO, ano) && matchRazao(r.RAZAO, rz));
+
+  const groups: { [mes: string]: { total: number; impedimentos: number } } = {};
+  meses.forEach(m => {
+    groups[m] = { total: 0, impedimentos: 0 };
+  });
+
+  filtered.forEach(r => {
+    const m = String(r['MÊS'] || '');
+    if (!groups[m]) groups[m] = { total: 0, impedimentos: 0 };
+    if (isValidInstalacao(r['INSTALAÇÃO'])) groups[m].total++;
+    if (isImpedimentoNL(r.NL)) groups[m].impedimentos++;
+  });
+
+  return meses.map(m => {
+    const g = groups[m] || { total: 0, impedimentos: 0 };
+    const realizadas = Math.max(0, g.total - g.impedimentos);
+    const perc = g.total > 0 ? (g.impedimentos / g.total) * 100 : 0;
+    return {
+      label: m,
+      leituras_a_realizar: g.total,
+      leituras_realizadas: realizadas,
+      leituras_nao_realizadas: g.impedimentos,
+      percentual_impedimento: perc
+    };
+  });
+}
+
+export async function getDashboardChartPorAno(
+  anos: number[],
+  mes: string,
+  rz: number | string | null
+): Promise<(DashboardResumo & { label: string })[]> {
+  const allData = await getAllDadosGerais();
+  const filtered = allData.filter(r => matchMes(r['MÊS'], mes) && matchRazao(r.RAZAO, rz));
+
+  const groups: { [ano: number]: { total: number; impedimentos: number } } = {};
+  anos.forEach(y => {
+    groups[y] = { total: 0, impedimentos: 0 };
+  });
+
+  filtered.forEach(r => {
+    const y = Number(r.ANO);
+    if (!groups[y]) groups[y] = { total: 0, impedimentos: 0 };
+    if (isValidInstalacao(r['INSTALAÇÃO'])) groups[y].total++;
+    if (isImpedimentoNL(r.NL)) groups[y].impedimentos++;
+  });
+
+  return anos.map(y => {
+    const g = groups[y] || { total: 0, impedimentos: 0 };
+    const realizadas = Math.max(0, g.total - g.impedimentos);
+    const perc = g.total > 0 ? (g.impedimentos / g.total) * 100 : 0;
+    return {
+      label: String(y),
+      leituras_a_realizar: g.total,
+      leituras_realizadas: realizadas,
+      leituras_nao_realizadas: g.impedimentos,
+      percentual_impedimento: perc
+    };
+  });
 }
 
 export async function getControleLeiturista(params: { p_ano: number; p_mes: string; p_rz?: any; p_matr?: any }) {
