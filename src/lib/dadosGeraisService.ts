@@ -344,90 +344,13 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Gerador determinístico de dados de referência BigQuery (leiturabd.dados_diarios)
- * Utilizado para manter a experiência funcional em ambiente de desenvolvimento/offline
- * quando a função serverless não tiver credenciais ativas do Google Cloud.
- */
-function generateBigQueryBaselineData(): any[] {
-  const razoes = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'];
-  const meses = ['Outubro', 'Setembro', 'Agosto'];
-  const matriculas = ['10042', '10085', '10123', '10190', '10214', '10355', '10412', '10580'];
-  const impedimentos = [
-    'Portão Fechado', 'Cão Solto', 'Casa Fechada', 'Faturada', 'Sem Acesso',
-    'Chave Incorreta', 'Morador Ausente', 'Faturada', 'Faturada', 'Faturada'
-  ];
-  const simulações = [
-    '', '', '', 'Simulação Confirmada', '', '', 'Leitura Estimada', ''
-  ];
-  const cnas = [
-    '', '', 'Consumo Não Autorizado', '', 'Desvio Constatado', ''
-  ];
-  const tipos = ['Urbano', 'Rural', 'Povoado'];
-  const nlCodes = ['00', '00', '00', '3201', '3301', '5101', '00', '00'];
-
-  const rows: any[] = [];
-  const targetCount = 40222;
-
-  for (let i = 0; i < targetCount; i++) {
-    const rz = razoes[i % razoes.length];
-    const m = meses[Math.floor(i / 13400) % meses.length];
-    const ano = 2026;
-    const matr = matriculas[i % matriculas.length];
-    const tipo = tipos[i % tipos.length];
-    const nl = nlCodes[i % nlCodes.length];
-    const isImp = nl !== '00';
-    const nosbImp = isImp ? impedimentos[i % impedimentos.length] : 'Faturada';
-    const nosbSim = simulações[i % simulações.length];
-    const cna = cnas[i % cnas.length];
-    const ulNum = 100 + (i % 25);
-    const dig = (i % 3) + 1;
-    const foto = (i % 5 === 0) ? 'FALHA' : 'OK';
-    const dia = String((i % 28) + 1).padStart(2, '0');
-    const dataStr = `${dia}/10/2026`;
-    const horaH = String(7 + (i % 11)).padStart(2, '0');
-    const horaM = String((i * 7) % 60).padStart(2, '0');
-    const horaStr = `${horaH}:${horaM}:00`;
-
-    const row: any = {
-      MÊS: m,
-      ANO: ano,
-      INSTALAÇÃO: String(1000000 + i),
-      MEDIDOR: `MED-${10000 + (i % 5000)}`,
-      REG: `0${(i % 5) + 1}`,
-      RAZAO: rz,
-      RZ_UL_LV: `${rz}${ulNum}01`,
-      UL: ulNum,
-      FOTO: foto,
-      TIPO: tipo,
-      MATR: matr,
-      NL: nl,
-      DATA: dataStr,
-      HORA: horaStr,
-      ENDEREÇO: `Rua das Flores, ${10 + (i % 800)}`,
-      LEITURA: 1000 + (i % 9000),
-      CONSUMO: 50 + (i % 600),
-      nosb_impedimento: nosbImp,
-      nosb_simulacao: nosbSim,
-      digitacao: dig,
-      cna: cna,
-      consistencia: 'Consistente'
-    };
-
-    prepareRowMetadata(row);
-    rows.push(row);
-  }
-
-  return rows;
-}
-
-/**
  * BUSCA GLOBAL E IRRESTRITA DE TODOS OS DADOS DO BIGQUERY:
  * Consulta o endpoint serverless do Netlify (/.netlify/functions/get-data)
  * conectado diretamente ao Google BigQuery (Projeto: leiturabd, Dataset: dados_diarios).
- * Carrega e padroniza 100% dos registros abrangendo todas as razões de '01' a '10' e incrementos dinâmicos.
+ * Não utiliza nenhum dado mock, estático ou fallback local.
  */
 export async function getAllDadosGerais(forceRefresh: boolean = false): Promise<any[]> {
-  if (!forceRefresh && masterDadosGerais && masterDadosGerais.length >= 40222) {
+  if (!forceRefresh && masterDadosGerais !== null) {
     return masterDadosGerais;
   }
 
@@ -437,30 +360,26 @@ export async function getAllDadosGerais(forceRefresh: boolean = false): Promise<
 
   inFlightMasterPromise = (async () => {
     try {
-      // 1. ORIGEM EXCLUSIVA: Google BigQuery (leiturabd.dados_diarios) via Netlify Function (/.netlify/functions/get-data)
+      // ORIGEM EXCLUSIVA: Google BigQuery (leiturabd.dados_diarios) via Netlify Function (/.netlify/functions/get-data)
       const bqRows = await fetchBigQueryNetlifyData();
       if (bqRows && bqRows.length > 0) {
-        console.log(`[BigQuery] Alimentando base em memória com ${bqRows.length} registros (leiturabd.dados_diarios)`);
+        console.log(`[BigQuery] ${bqRows.length} registros reais carregados com sucesso da tabela leiturabd.dados_diarios`);
         for (let i = 0; i < bqRows.length; i++) {
           prepareRowMetadata(bqRows[i]);
         }
         masterDadosGerais = bqRows;
-        distinctFiltersCache = null;
-        notifyListeners();
-        return masterDadosGerais;
+      } else {
+        masterDadosGerais = [];
       }
-
-      // 2. FALLBACK RESILIENTE DE INGESTÃO BIGQUERY (para preview/ambiente local sem credenciais ativas de nuvem)
-      console.log('[BigQuery] Inicializando base padrão com 40.222 registros de referência (leiturabd.dados_diarios)');
-      const baselineRows = generateBigQueryBaselineData();
-      masterDadosGerais = baselineRows;
       distinctFiltersCache = null;
       notifyListeners();
-
       return masterDadosGerais;
     } catch (err: any) {
-      console.error('Erro ao carregar base BigQuery de DadosGerais:', err);
-      return masterDadosGerais || [];
+      console.error('Erro ao consultar dados no BigQuery:', err);
+      masterDadosGerais = [];
+      distinctFiltersCache = null;
+      notifyListeners();
+      return masterDadosGerais;
     } finally {
       inFlightMasterPromise = null;
     }
