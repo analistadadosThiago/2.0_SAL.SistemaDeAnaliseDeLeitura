@@ -528,15 +528,15 @@ export async function getDistinctFilters(forceRefresh: boolean = false): Promise
 
   if (!data || data.length === 0) {
     return {
-      anos: [2026, 2025],
-      meses: ['Outubro', 'Setembro', 'Agosto', 'Julho', 'Junho', 'Maio'],
-      razoes: ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'],
+      anos: [],
+      meses: [],
+      razoes: [],
       matriculas: [],
       motivos: [],
       motivos_impedimento: [],
       motivos_simulacao: [],
       cnas: [],
-      tipos: ['Urbano', 'Rural', 'Povoado']
+      tipos: []
     };
   }
 
