@@ -8,13 +8,13 @@ export default defineConfig(({mode}) => {
 
   // Sincroniza variáveis de ambiente no processo Node para o get-data.js
   for (const [key, val] of Object.entries(env)) {
-    if (!process.env[key] && val) {
+    if (val) {
       process.env[key] = val;
     }
   }
 
   const bigqueryProjectId = env.BIGQUERY_PROJECT_ID || process.env.BIGQUERY_PROJECT_ID || 'leiturabd';
-  const bigqueryDataset = env.BIGQUERY_DATASET || process.env.BIGQUERY_DATASET || 'dados_diarios';
+  const bigqueryDataset = env.BIGQUERY_DATASET || process.env.BIGQUERY_DATASET || 'LeituraBD';
 
   const netlifyFunctionsDevPlugin = () => ({
     name: 'netlify-functions-dev-middleware',
