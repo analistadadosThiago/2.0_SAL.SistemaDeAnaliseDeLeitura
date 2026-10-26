@@ -184,17 +184,28 @@ export async function fetchBigQueryNetlifyData(): Promise<any[] | null> {
         }
       });
 
+      const contentType = res.headers.get('content-type') || '';
       if (!res.ok) {
+        if (contentType.includes('application/json')) {
+          const errJson = await res.json().catch(() => null);
+          if (errJson?.error) {
+            console.warn(`[BigQuery Netlify] Resposta do endpoint (tentativa ${tentativa + 1}):`, errJson.error);
+          }
+        }
         await new Promise(r => setTimeout(r, 200 * (tentativa + 1)));
         continue;
       }
 
-      const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         return null;
       }
 
       const json = await res.json();
+      if (json && json.error) {
+        console.warn('[BigQuery Netlify] Erro retornado pela função serverless:', json.error);
+        return null;
+      }
+
       let rows: any[] | null = null;
       if (Array.isArray(json)) {
         rows = json;
@@ -211,7 +222,10 @@ export async function fetchBigQueryNetlifyData(): Promise<any[] | null> {
         return rows;
       }
       return null;
-    } catch (e) {
+    } catch (e: any) {
+      if (tentativa === 2) {
+        console.warn('[BigQuery Netlify] Não foi possível conectar ao endpoint:', e?.message || e);
+      }
       await new Promise(r => setTimeout(r, 200 * (tentativa + 1)));
     }
   }
@@ -227,29 +241,29 @@ export function prepareRowMetadata(row: any) {
   if (!row) return row;
   if (row._ready) return row;
 
-  // Unifica colunas BigQuery com suporte a nomes em maiúsculo, minúsculo e sem acento
-  const rawMes = row['MÊS'] ?? row['MES'] ?? row['mes'] ?? row['Mes'] ?? '';
-  const rawAno = row.ANO ?? row.ano ?? row.Ano ?? '';
-  const rawInstalacao = row['INSTALAÇÃO'] ?? row['INSTALACAO'] ?? row['instalacao'] ?? row['Instalacao'] ?? '';
-  const rawMedidor = row.MEDIDOR ?? row.medidor ?? row.Medidor ?? '';
-  const rawReg = row.REG ?? row.reg ?? row.Reg ?? '';
-  const rawRazao = row.RAZAO ?? row.razao ?? row.Razao ?? '';
-  const rawRzUlLv = row.RZ_UL_LV ?? row.rz_ul_lv ?? row.RzUlLv;
-  const rawUlCol = row.UL ?? row.ul ?? row.Ul;
-  const rawFoto = row.FOTO ?? row.foto ?? row.Foto ?? '';
-  const rawTipo = row.TIPO ?? row.tipo ?? row.Tipo ?? '';
-  const rawMatr = row.MATR ?? row.matr ?? row.Matr ?? '';
-  const rawNl = row.NL ?? row.nl ?? row.Nl ?? '';
-  const rawData = row.DATA ?? row.data ?? row.Data ?? '';
-  const rawHora = row.HORA ?? row.hora ?? row.Hora ?? '';
-  const rawEndereco = row['ENDEREÇO'] ?? row['ENDERECO'] ?? row['endereco'] ?? row['Endereco'] ?? '';
-  const rawLeitura = row.LEITURA ?? row.leitura ?? row.Leitura ?? 0;
-  const rawConsumo = row.CONSUMO ?? row.consumo ?? row.Consumo ?? 0;
-  const rawNosbImp = row.nosb_impedimento ?? row.NOSB_IMPEDIMENTO ?? row['nosb_impedimento'] ?? '';
-  const rawNosbSim = row.nosb_simulacao ?? row.NOSB_SIMULACAO ?? row['nosb_simulacao'] ?? '';
-  const rawDigitacao = row.digitacao ?? row.DIGITACAO ?? row['digitacao'] ?? '';
-  const rawCna = row.cna ?? row.CNA ?? row['cna'] ?? '';
-  const rawConsistencia = row.consistencia ?? row.CONSISTENCIA ?? row['consistencia'] ?? '';
+  // Unifica colunas BigQuery com suporte a nomes em maiúsculo, minúsculo, sem acento e com espaços residuais
+  const rawMes = row['MÊS'] ?? row['MES'] ?? row['MÊS '] ?? row['MES '] ?? row['mes'] ?? row['Mes'] ?? '';
+  const rawAno = row.ANO ?? row['ANO '] ?? row.ano ?? row.Ano ?? '';
+  const rawInstalacao = row['INSTALAÇÃO'] ?? row['INSTALACAO'] ?? row['INSTALAÇÃO '] ?? row['INSTALACAO '] ?? row['instalacao'] ?? row['Instalacao'] ?? '';
+  const rawMedidor = row.MEDIDOR ?? row['MEDIDOR '] ?? row.medidor ?? row.Medidor ?? '';
+  const rawReg = row.REG ?? row['REG '] ?? row.reg ?? row.Reg ?? '';
+  const rawRazao = row.RAZAO ?? row['RAZAO '] ?? row.razao ?? row.Razao ?? '';
+  const rawRzUlLv = row.RZ_UL_LV ?? row['RZ_UL_LV '] ?? row.rz_ul_lv ?? row.RzUlLv;
+  const rawUlCol = row.UL ?? row['UL '] ?? row.ul ?? row.Ul;
+  const rawFoto = row.FOTO ?? row['FOTO '] ?? row.foto ?? row.Foto ?? '';
+  const rawTipo = row.TIPO ?? row['TIPO '] ?? row.tipo ?? row.Tipo ?? '';
+  const rawMatr = row.MATR ?? row['MATR '] ?? row.matr ?? row.Matr ?? '';
+  const rawNl = row.NL ?? row['NL '] ?? row.nl ?? row.Nl ?? '';
+  const rawData = row.DATA ?? row['DATA '] ?? row.data ?? row.Data ?? '';
+  const rawHora = row.HORA ?? row['HORA '] ?? row.hora ?? row.Hora ?? '';
+  const rawEndereco = row['ENDEREÇO'] ?? row['ENDERECO'] ?? row['ENDEREÇO '] ?? row['ENDERECO '] ?? row['endereco'] ?? row['Endereco'] ?? '';
+  const rawLeitura = row.LEITURA ?? row['LEITURA '] ?? row['leitura '] ?? row.leitura ?? row.Leitura ?? 0;
+  const rawConsumo = row.CONSUMO ?? row['CONSUMO '] ?? row['consumo '] ?? row.consumo ?? row.Consumo ?? 0;
+  const rawNosbImp = row.nosb_impedimento ?? row['nosb_impedimento '] ?? row.NOSB_IMPEDIMENTO ?? row['NOSB_IMPEDIMENTO '] ?? '';
+  const rawNosbSim = row.nosb_simulacao ?? row['nosb_simulacao '] ?? row.NOSB_SIMULACAO ?? row['NOSB_SIMULACAO '] ?? '';
+  const rawDigitacao = row.digitacao ?? row['digitacao '] ?? row.DIGITACAO ?? row['DIGITACAO '] ?? '';
+  const rawCna = row.cna ?? row['cna '] ?? row.CNA ?? row['CNA '] ?? '';
+  const rawConsistencia = row.consistencia ?? row['consistencia '] ?? row.CONSISTENCIA ?? row['CONSISTENCIA '] ?? '';
 
   // Atribui propriedades padronizadas no objeto row
   row['MÊS'] = String(rawMes).trim();
@@ -514,15 +528,15 @@ export async function getDistinctFilters(forceRefresh: boolean = false): Promise
 
   if (!data || data.length === 0) {
     return {
-      anos: [],
-      meses: [],
-      razoes: [],
+      anos: [2026, 2025],
+      meses: ['Outubro', 'Setembro', 'Agosto', 'Julho', 'Junho', 'Maio'],
+      razoes: ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'],
       matriculas: [],
       motivos: [],
       motivos_impedimento: [],
       motivos_simulacao: [],
       cnas: [],
-      tipos: []
+      tipos: ['Urbano', 'Rural', 'Povoado']
     };
   }
 

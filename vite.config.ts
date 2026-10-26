@@ -3,14 +3,18 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
 
-  const bigqueryProjectId = env.BIGQUERY_PROJECT_ID || 'leiturabd';
-  const bigqueryDataset = env.BIGQUERY_DATASET || 'dados_diarios';
+  // Sincroniza variáveis de ambiente no processo Node para o get-data.js
+  for (const [key, val] of Object.entries(env)) {
+    if (!process.env[key] && val) {
+      process.env[key] = val;
+    }
+  }
+
+  const bigqueryProjectId = env.BIGQUERY_PROJECT_ID || process.env.BIGQUERY_PROJECT_ID || 'leiturabd';
+  const bigqueryDataset = env.BIGQUERY_DATASET || process.env.BIGQUERY_DATASET || 'dados_diarios';
 
   const netlifyFunctionsDevPlugin = () => ({
     name: 'netlify-functions-dev-middleware',
@@ -19,8 +23,8 @@ export default defineConfig(({mode}) => {
         const url = req.url || '';
         if (url.startsWith('/.netlify/functions/get-data')) {
           try {
-            const getDataFn = require('./netlify/functions/get-data.js');
-            const handler = getDataFn.handler || getDataFn.default || getDataFn;
+            const getDataModule: any = await import('./netlify/functions/get-data.js');
+            const handler = getDataModule.handler || getDataModule.default;
 
             const urlObj = new URL(url, 'http://localhost:3000');
             const queryStringParameters = Object.fromEntries(urlObj.searchParams.entries());
