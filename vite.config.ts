@@ -16,37 +16,34 @@ export default defineConfig(({mode}) => {
   const bigqueryProjectId = env.BIGQUERY_PROJECT_ID || process.env.BIGQUERY_PROJECT_ID || 'leiturabd';
   const bigqueryDataset = env.BIGQUERY_DATASET || process.env.BIGQUERY_DATASET || 'LeituraBD';
 
-  const netlifyFunctionsDevPlugin = () => ({
-    name: 'netlify-functions-dev-middleware',
+  const vercelApiDevPlugin = () => ({
+    name: 'vercel-api-dev-middleware',
     configureServer(server: any) {
       server.middlewares.use(async (req: any, res: any, next: any) => {
         const url = req.url || '';
-        if (url.startsWith('/.netlify/functions/get-data')) {
+        if (url.startsWith('/api/get-data') || url.startsWith('/.netlify/functions/get-data')) {
           try {
-            const getDataModule: any = await import('./netlify/functions/get-data.js');
-            const handler = getDataModule.handler || getDataModule.default;
-
-            const urlObj = new URL(url, 'http://localhost:3000');
-            const queryStringParameters = Object.fromEntries(urlObj.searchParams.entries());
-
-            const event = {
-              httpMethod: req.method || 'GET',
-              queryStringParameters,
-              headers: req.headers,
-              path: urlObj.pathname,
-            };
-
-            const result = await handler(event, {});
-            res.statusCode = result.statusCode || 200;
-            if (result.headers) {
-              for (const [k, v] of Object.entries(result.headers)) {
-                res.setHeader(k, v as string);
-              }
+            if (!res.status) {
+              res.status = function (code: number) {
+                res.statusCode = code;
+                return this;
+              };
             }
-            res.end(typeof result.body === 'string' ? result.body : JSON.stringify(result.body));
+            if (!res.json) {
+              res.json = function (data: any) {
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify(data));
+                return this;
+              };
+            }
+
+            const apiModule: any = await import('./api/get-data.js');
+            const handler = apiModule.default || apiModule.handler;
+
+            await handler(req, res);
             return;
           } catch (err: any) {
-            console.error('[BigQuery Netlify Dev] Erro ao consultar BigQuery via get-data.js:', err);
+            console.error('[BigQuery Vercel Dev] Erro ao consultar BigQuery via api/get-data.js:', err);
             res.statusCode = 500;
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ error: err.message || 'Erro ao consultar BigQuery' }));
@@ -55,11 +52,11 @@ export default defineConfig(({mode}) => {
         }
         next();
       });
-    }
+    },
   });
 
   return {
-    plugins: [react(), tailwindcss(), netlifyFunctionsDevPlugin()],
+    plugins: [react(), tailwindcss(), vercelApiDevPlugin()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.BIGQUERY_PROJECT_ID': JSON.stringify(bigqueryProjectId),

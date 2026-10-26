@@ -5,7 +5,7 @@ import { DashboardResumo, DashboardLeituraTipo } from '../types';
  *
  * ARQUITETURA DE DADOS UNIFICADA:
  * 1. Origem de Dados: Google BigQuery (Projeto: leiturabd, Dataset: dados_diarios)
- * 2. Integração: Função Serverless no Netlify (/.netlify/functions/get-data)
+ * 2. Integração: Função Serverless na Vercel (/api/get-data)
  * 3. Preservação Total de Regras e Interface:
  *    - Todas as regras de negócio, tabelas, cálculos, comportamentos de tela,
  *      gráficos e exportações (PDF/Excel) permanecem rigorosamente os mesmos.
@@ -17,7 +17,8 @@ import { DashboardResumo, DashboardLeituraTipo } from '../types';
  *    nosb_simulacao, digitacao, cna, consistencia.
  */
 
-export const BIGQUERY_NETLIFY_ENDPOINT = '/.netlify/functions/get-data';
+export const BIGQUERY_API_ENDPOINT = '/api/get-data';
+export const BIGQUERY_NETLIFY_ENDPOINT = BIGQUERY_API_ENDPOINT; // Retrocompatibilidade
 
 // Armazenamento mestre dos dados na memória global da aplicação
 let masterDadosGerais: any[] | null = null;
@@ -41,7 +42,7 @@ export async function checkDatabaseGrowth(): Promise<boolean> {
   if (now - lastCheckTime < 15000) return false;
   lastCheckTime = now;
   try {
-    const bqData = await fetchBigQueryNetlifyData();
+    const bqData = await fetchBigQueryData();
     if (bqData && bqData.length > 0 && masterDadosGerais && bqData.length !== masterDadosGerais.length) {
       await getAllDadosGerais(true);
       return true;
@@ -170,14 +171,14 @@ export function isImpedimentoNL(nl: any): boolean {
 }
 
 /**
- * Consulta a função serverless no Netlify para extrair dados do BigQuery:
+ * Consulta a função serverless na Vercel para extrair dados do BigQuery:
  * Projeto: leiturabd
  * Dataset: dados_diarios
  */
-export async function fetchBigQueryNetlifyData(): Promise<any[] | null> {
+export async function fetchBigQueryData(): Promise<any[] | null> {
   for (let tentativa = 0; tentativa < 3; tentativa++) {
     try {
-      const res = await fetch(BIGQUERY_NETLIFY_ENDPOINT, {
+      const res = await fetch(BIGQUERY_API_ENDPOINT, {
         method: 'GET',
         headers: {
           'Accept': 'application/json'
@@ -189,7 +190,7 @@ export async function fetchBigQueryNetlifyData(): Promise<any[] | null> {
         if (contentType.includes('application/json')) {
           const errJson = await res.json().catch(() => null);
           if (errJson?.error) {
-            console.warn(`[BigQuery Netlify] Resposta do endpoint (tentativa ${tentativa + 1}):`, errJson.error);
+            console.warn(`[BigQuery Vercel] Resposta do endpoint (tentativa ${tentativa + 1}):`, errJson.error);
           }
         }
         await new Promise(r => setTimeout(r, 200 * (tentativa + 1)));
@@ -202,7 +203,7 @@ export async function fetchBigQueryNetlifyData(): Promise<any[] | null> {
 
       const json = await res.json();
       if (json && json.error) {
-        console.warn('[BigQuery Netlify] Erro retornado pela função serverless:', json.error);
+        console.warn('[BigQuery Vercel] Erro retornado pela função serverless:', json.error);
         return null;
       }
 
@@ -218,19 +219,21 @@ export async function fetchBigQueryNetlifyData(): Promise<any[] | null> {
       }
 
       if (rows && rows.length > 0) {
-        console.log(`[BigQuery Netlify] ${rows.length} registros obtidos com sucesso via ${BIGQUERY_NETLIFY_ENDPOINT}`);
+        console.log(`[BigQuery Vercel] ${rows.length} registros obtidos com sucesso via ${BIGQUERY_API_ENDPOINT}`);
         return rows;
       }
       return null;
     } catch (e: any) {
       if (tentativa === 2) {
-        console.warn('[BigQuery Netlify] Não foi possível conectar ao endpoint:', e?.message || e);
+        console.warn('[BigQuery Vercel] Não foi possível conectar ao endpoint:', e?.message || e);
       }
       await new Promise(r => setTimeout(r, 200 * (tentativa + 1)));
     }
   }
   return null;
 }
+
+export const fetchBigQueryNetlifyData = fetchBigQueryData;
 
 /**
  * Prepara metadados normalizados em cada linha da base global
@@ -338,7 +341,7 @@ function notifyListeners() {
 
 /**
  * ATUALIZAÇÃO AUTOMÁTICA EM TEMPO REAL:
- * Monitora periodicamente a função serverless do Netlify integrada ao BigQuery
+ * Monitora periodicamente a função serverless da Vercel integrada ao BigQuery
  * (leiturabd.dados_diarios) para identificar novos registros e incrementos de dados.
  */
 let realtimeInitialized = false;
@@ -359,7 +362,7 @@ if (typeof window !== 'undefined') {
 
 /**
  * BUSCA GLOBAL E IRRESTRITA DE TODOS OS DADOS DO BIGQUERY:
- * Consulta o endpoint serverless do Netlify (/.netlify/functions/get-data)
+ * Consulta o endpoint serverless da Vercel (/api/get-data)
  * conectado diretamente ao Google BigQuery (Projeto: leiturabd, Dataset: dados_diarios).
  * Não utiliza nenhum dado mock, estático ou fallback local.
  */
@@ -374,8 +377,8 @@ export async function getAllDadosGerais(forceRefresh: boolean = false): Promise<
 
   inFlightMasterPromise = (async () => {
     try {
-      // ORIGEM EXCLUSIVA: Google BigQuery (leiturabd.dados_diarios) via Netlify Function (/.netlify/functions/get-data)
-      const bqRows = await fetchBigQueryNetlifyData();
+      // ORIGEM EXCLUSIVA: Google BigQuery (leiturabd.dados_diarios) via Vercel Function (/api/get-data)
+      const bqRows = await fetchBigQueryData();
       if (bqRows && bqRows.length > 0) {
         console.log(`[BigQuery] ${bqRows.length} registros reais carregados com sucesso da tabela leiturabd.dados_diarios`);
         for (let i = 0; i < bqRows.length; i++) {

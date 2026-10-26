@@ -34,7 +34,7 @@ export const BIGQUERY_CONFIG = {
   projectId: 'leiturabd',
   dataset: 'dados_diarios',
   table: 'DadosGerais',
-  endpoint: '/.netlify/functions/get-data'
+  endpoint: '/api/get-data'
 };
 
 export const SCHEMA_INFO = "Schema oficial do Google BigQuery (leiturabd.dados_diarios.DadosGerais).";

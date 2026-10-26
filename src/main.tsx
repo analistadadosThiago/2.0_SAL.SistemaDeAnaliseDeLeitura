@@ -14,7 +14,7 @@ try {
   console.warn('Erro ao limpar storage do navegador:', e);
 }
 
-// Inicia carregamento assíncrono da base global (Google BigQuery via Netlify Functions)
+// Inicia carregamento assíncrono da base global (Google BigQuery via Vercel Functions)
 setupRealtimeSubscription();
 getAllDadosGerais().catch(err => {
   console.error('Inicialização da base global DadosGerais (BigQuery):', err);
