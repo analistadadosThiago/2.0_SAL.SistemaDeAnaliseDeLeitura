@@ -13,33 +13,8 @@ export default defineConfig(({mode}) => {
     }
   }
 
-  // Prepara o formato PEM da chave privada no ambiente de desenvolvimento se houver formatação com espaços
-  if (process.env.BIGQUERY_PRIVATE_KEY) {
-    let key = process.env.BIGQUERY_PRIVATE_KEY.trim();
-    if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
-      key = key.slice(1, -1).trim();
-    }
-    key = key.replace(/\\n/g, '\n');
-    if (!key.includes('\n') && key.includes(' ')) {
-      const words = key.split(/\s+/).filter(Boolean);
-      const rawBody = words.slice(3, -3).join('');
-      for (let i = rawBody.length - 1; i >= 0; i--) {
-        const cand = rawBody.slice(0, i) + rawBody.slice(i + 1);
-        if (cand.length % 4 === 0) {
-          key = '-----BEGIN PRIVATE KEY-----\n' + (cand.match(/.{1,64}/g) || []).join('\n') + '\n-----END PRIVATE KEY-----\n';
-          break;
-        }
-      }
-    }
-    process.env.BIGQUERY_PRIVATE_KEY = key;
-  }
-
-  if (!process.env.BIGQUERY_DATASET || process.env.BIGQUERY_DATASET === 'dados_diarios') {
-    process.env.BIGQUERY_DATASET = 'LeituraBD';
-  }
-
   const bigqueryProjectId = env.BIGQUERY_PROJECT_ID || process.env.BIGQUERY_PROJECT_ID || 'leiturabd';
-  const bigqueryDataset = process.env.BIGQUERY_DATASET || 'LeituraBD';
+  const bigqueryDataset = env.BIGQUERY_DATASET || process.env.BIGQUERY_DATASET || 'dados_diarios';
 
   const netlifyFunctionsDevPlugin = () => ({
     name: 'netlify-functions-dev-middleware',
