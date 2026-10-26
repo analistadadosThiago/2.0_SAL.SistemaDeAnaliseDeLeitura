@@ -5,14 +5,17 @@ export const handler = async (event, context) => {
     const projectId = process.env.BIGQUERY_PROJECT_ID;
     const datasetId = process.env.BIGQUERY_DATASET || 'dados_diarios';
     const clientEmail = process.env.BIGQUERY_CLIENT_EMAIL;
-    const privateKey = process.env.BIGQUERY_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    let privateKey = process.env.BIGQUERY_PRIVATE_KEY;
 
     if (!projectId || !clientEmail || !privateKey) {
       return {
         statusCode: 500,
-        body: JSON.stringify({ error: 'Credenciais do BigQuery ausentes nas variáveis de ambiente.' })
+        body: JSON.stringify({ error: 'Credenciais do BigQuery ausentes nas variáveis de ambiente do Netlify.' })
       };
     }
+
+    // Normalização rigorosa da chave privada para resolver erros do OpenSSL
+    privateKey = privateKey.replace(/\\n/g, '\n');
 
     const bigquery = new BigQuery({
       projectId,
@@ -26,7 +29,6 @@ export const handler = async (event, context) => {
     const [rows] = await bigquery.query(query);
 
     return {
-      statusCode: 500,
       statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
