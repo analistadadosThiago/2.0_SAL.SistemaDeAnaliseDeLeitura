@@ -17,38 +17,40 @@ export default async function handler(req, res) {
   try {
     const projectId = process.env.BIGQUERY_PROJECT_ID || 'leituradb';
     const clientEmail = process.env.BIGQUERY_CLIENT_EMAIL;
-    const rawKey = process.env.BIGQUERY_PRIVATE_KEY_BASE64 || process.env.BIGQUERY_PRIVATE_KEY;
+    let rawKey = process.env.BIGQUERY_PRIVATE_KEY || '';
 
     if (!clientEmail || !rawKey) {
       return res.status(500).json({
-        error: 'Credenciais do BigQuery ausentes nas variáveis de ambiente da Vercel.'
+        error: 'Credenciais do BigQuery ausentes nas variáveis de ambiente.'
       });
     }
 
-    let privateKeyClean = rawKey.trim().replace(/^["']|["']$/g, '');
+    // Limpeza rigorosa de aspas e formatações indesejadas do painel
+    rawKey = rawKey.trim().replace(/^["']|["']$/g, '');
 
-    // 1. Se estiver em Base64, decodifica primeiro
-    if (!privateKeyClean.includes('BEGIN PRIVATE KEY') && privateKeyClean.length > 150) {
+    // Reconstrói o formato correto do certificado RSA independentemente de como foi colado
+    let formattedKey = rawKey;
+    if (!formattedKey.includes('-----BEGIN PRIVATE KEY-----')) {
+      // Se por acaso estiver em Base64 puro
       try {
-        const decoded = Buffer.from(privateKeyClean, 'base64').toString('utf8');
+        const decoded = Buffer.from(formattedKey, 'base64').toString('utf8');
         if (decoded.includes('BEGIN PRIVATE KEY')) {
-          privateKeyClean = decoded;
+          formattedKey = decoded;
         }
       } catch (e) {}
     }
 
-    // 2. Converte literais '\n' para quebras de linha reais
-    privateKeyClean = privateKeyClean.replace(/\\n/g, '\n');
-
-    // 3. Auto-reparação blindada: se a chave ficou numa linha única ou com espaços (comum na Vercel)
-    if (privateKeyClean.includes('-----BEGIN PRIVATE KEY-----')) {
-      const base64Body = privateKeyClean
-        .replace('-----BEGIN PRIVATE KEY-----', '')
-        .replace('-----END PRIVATE KEY-----', '')
-        .replace(/\s+/g, ''); // Remove todos os espaços, quebras e lixo gerados pelo painel
-
-      const chunks = base64Body.match(/.{1,64}/g) || [base64Body];
-      privateKeyClean = `-----BEGIN PRIVATE KEY-----\n${chunks.join('\n')}\n-----END PRIVATE KEY-----\n`;
+    // Substitui literais \n por quebras de linha reais e garante o wrap correto de 64 caracteres
+    formattedKey = formattedKey.replace(/\\n/g, '\n');
+    
+    if (formattedKey.includes('-----BEGIN PRIVATE KEY-----')) {
+      const body = formattedKey
+        .replace(/-----BEGIN PRIVATE KEY-----/, '')
+        .replace(/-----END PRIVATE KEY-----/, '')
+        .replace(/\s+/g, '');
+      
+      const chunks = body.match(/.{1,64}/g) || [body];
+      formattedKey = `-----BEGIN PRIVATE KEY-----\n${chunks.join('\n')}\n-----END PRIVATE KEY-----\n`;
     }
 
     const bigquery = new BigQuery({
@@ -56,7 +58,7 @@ export default async function handler(req, res) {
       location: 'US',
       credentials: {
         client_email: clientEmail,
-        private_key: privateKeyClean,
+        private_key: formattedKey,
       },
     });
 
@@ -84,7 +86,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json(rows || []);
   } catch (error) {
-    console.error('Erro na função get-data do BigQuery (Vercel):', error);
+    console.error('Erro no BigQuery:', error);
     return res.status(500).json({ error: error.message });
   }
 }
