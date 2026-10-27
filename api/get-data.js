@@ -17,40 +17,46 @@ export default async function handler(req, res) {
   try {
     const projectId = process.env.BIGQUERY_PROJECT_ID || 'leituradb';
     const clientEmail = process.env.BIGQUERY_CLIENT_EMAIL;
-    
-    // Aceita qualquer uma das variáveis para garantir que nunca dê ausente
     const rawKey = process.env.BIGQUERY_PRIVATE_KEY_BASE64 || process.env.BIGQUERY_PRIVATE_KEY;
 
     if (!clientEmail || !rawKey) {
       return res.status(500).json({
-        error: 'Credenciais do BigQuery ausentes nas variáveis de ambiente da Vercel.',
-        debug: {
-          hasEmail: !!clientEmail,
-          hasKey: !!rawKey
-        }
+        error: 'Credenciais do BigQuery ausentes nas variáveis de ambiente da Vercel.'
       });
     }
 
-    let privateKey = rawKey.trim();
+    let privateKeyClean = rawKey.trim().replace(/^["']|["']$/g, '');
 
-    // Se estiver em Base64 (não começa com o cabeçalho PEM), decodifica
-    if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+    // 1. Se estiver em Base64, decodifica primeiro
+    if (!privateKeyClean.includes('BEGIN PRIVATE KEY') && privateKeyClean.length > 150) {
       try {
-        privateKey = Buffer.from(privateKey, 'base64').toString('utf8');
-      } catch (e) {
-        // Mantém o original se falhar
-      }
+        const decoded = Buffer.from(privateKeyClean, 'base64').toString('utf8');
+        if (decoded.includes('BEGIN PRIVATE KEY')) {
+          privateKeyClean = decoded;
+        }
+      } catch (e) {}
     }
 
-    // Normalização rigorosa das quebras de linha
-    privateKey = privateKey.replace(/\\n/g, '\n');
+    // 2. Converte literais '\n' para quebras de linha reais
+    privateKeyClean = privateKeyClean.replace(/\\n/g, '\n');
+
+    // 3. Auto-reparação blindada: se a chave ficou numa linha única ou com espaços (comum na Vercel)
+    if (privateKeyClean.includes('-----BEGIN PRIVATE KEY-----')) {
+      const base64Body = privateKeyClean
+        .replace('-----BEGIN PRIVATE KEY-----', '')
+        .replace('-----END PRIVATE KEY-----', '')
+        .replace(/\s+/g, ''); // Remove todos os espaços, quebras e lixo gerados pelo painel
+
+      const chunks = base64Body.match(/.{1,64}/g) || [base64Body];
+      privateKeyClean = `-----BEGIN PRIVATE KEY-----\n${chunks.join('\n')}\n-----END PRIVATE KEY-----\n`;
+    }
 
     const bigquery = new BigQuery({
       projectId,
       location: 'US',
       credentials: {
         client_email: clientEmail,
-        private_key: privateKey,
+        private_key: privateKeyClean,
       },
     });
 
