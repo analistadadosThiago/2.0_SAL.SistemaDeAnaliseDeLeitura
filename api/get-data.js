@@ -55,10 +55,31 @@ export default async function handler(req, res) {
       },
     });
 
-    const query = `SELECT * FROM \`${projectId}.${datasetId}.dados_diarios\``;
-    const [rows] = await bigquery.query(query);
+    let rows = null;
+    let queryError = null;
+    const candidateDatasets = Array.from(new Set([datasetId, 'LeituraBD', 'dados_diarios'].filter(Boolean)));
 
-    return res.status(200).json(rows);
+    for (const ds of candidateDatasets) {
+      try {
+        const query = `SELECT * FROM \`${projectId}.${ds}.dados_diarios\``;
+        const [result] = await bigquery.query(query);
+        rows = result;
+        break;
+      } catch (err) {
+        queryError = err;
+        // Se o erro for dataset não encontrado, tenta o próximo candidato
+        if (err.message && err.message.includes('Not found: Dataset')) {
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    if (!rows && queryError) {
+      throw queryError;
+    }
+
+    return res.status(200).json(rows || []);
   } catch (error) {
     console.error('Erro na função get-data do BigQuery (Vercel):', error);
     return res.status(500).json({ error: error.message });
