@@ -25,20 +25,14 @@ export default async function handler(req, res) {
       });
     }
 
-    // Limpeza e normalização robusta da chave privada para evitar erros de decodificação do OpenSSL
+    // Limpeza profunda: remove aspas do início/fim caso tenham sido salvas acidentalmente no painel
     privateKey = privateKey.trim();
-    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+    if ((privateKey.startsWith('"') && privateKey.endsWith('"')) || (privateKey.startsWith("'") && privateKey.endsWith("'"))) {
       privateKey = privateKey.slice(1, -1);
     }
-    
-    // Converte literais '\n' ou espaços para quebras de linha reais do OpenSSL
-    if (privateKey.includes('\\n')) {
-      privateKey = privateKey.replace(/\\n/g, '\n');
-    } else if (!privateKey.includes('\n') && privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
-      privateKey = privateKey
-        .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
-        .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
-    }
+
+    // Converte literais '\n' para quebras de linha reais
+    privateKey = privateKey.replace(/\\n/g, '\n');
 
     const bigquery = new BigQuery({
       projectId,
