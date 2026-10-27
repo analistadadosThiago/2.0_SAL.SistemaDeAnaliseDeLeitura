@@ -1,7 +1,6 @@
 import { BigQuery } from '@google-cloud/bigquery';
 
 export default async function handler(req, res) {
-  // Cabeçalhos CORS
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -26,10 +25,21 @@ export default async function handler(req, res) {
       });
     }
 
-    // Normalização da chave privada para resolver quebras de linha
-    privateKey = privateKey.replace(/\\n/g, '\n');
+    // Limpeza e normalização robusta da chave privada para evitar erros de decodificação do OpenSSL
+    privateKey = privateKey.trim();
+    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+      privateKey = privateKey.slice(1, -1);
+    }
+    
+    // Converte literais '\n' ou espaços para quebras de linha reais do OpenSSL
+    if (privateKey.includes('\\n')) {
+      privateKey = privateKey.replace(/\\n/g, '\n');
+    } else if (!privateKey.includes('\n') && privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+      privateKey = privateKey
+        .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
+        .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
+    }
 
-    // Inicialização do BigQuery fixando a região padrão ('US') para evitar o erro CloudRegion
     const bigquery = new BigQuery({
       projectId,
       location: 'US',
@@ -41,8 +51,6 @@ export default async function handler(req, res) {
 
     let rows = null;
     let queryError = null;
-    
-    // Lista de datasets para tentar a consulta sem falhas de nome
     const candidateDatasets = ['LeituraBD', 'dados_diarios'];
 
     for (const ds of candidateDatasets) {
