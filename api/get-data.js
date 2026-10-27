@@ -17,27 +17,33 @@ export default async function handler(req, res) {
   try {
     const projectId = process.env.BIGQUERY_PROJECT_ID || 'leituradb';
     const clientEmail = process.env.BIGQUERY_CLIENT_EMAIL;
-    const base64Key = process.env.BIGQUERY_PRIVATE_KEY_BASE64 || process.env.BIGQUERY_PRIVATE_KEY;
+    
+    // Aceita qualquer uma das variáveis para garantir que nunca dê ausente
+    const rawKey = process.env.BIGQUERY_PRIVATE_KEY_BASE64 || process.env.BIGQUERY_PRIVATE_KEY;
 
-    if (!clientEmail || !base64Key) {
+    if (!clientEmail || !rawKey) {
       return res.status(500).json({
-        error: 'Credenciais do BigQuery ausentes nas variáveis de ambiente da Vercel.'
+        error: 'Credenciais do BigQuery ausentes nas variáveis de ambiente da Vercel.',
+        debug: {
+          hasEmail: !!clientEmail,
+          hasKey: !!rawKey
+        }
       });
     }
 
-    let privateKey = base64Key;
+    let privateKey = rawKey.trim();
 
-    // Se estiver em Base64 (sem espaçamentos de chave pura no início), decodifica
-    if (!base64Key.includes('-----BEGIN PRIVATE KEY-----')) {
+    // Se estiver em Base64 (não começa com o cabeçalho PEM), decodifica
+    if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
       try {
-        privateKey = Buffer.from(base64Key, 'base64').toString('utf8');
+        privateKey = Buffer.from(privateKey, 'base64').toString('utf8');
       } catch (e) {
-        // Se falhar a decodificação, mantém o original
+        // Mantém o original se falhar
       }
     }
 
-    // Normalização padrão das quebras de linha
-    privateKey = privateKey.trim().replace(/\\n/g, '\n');
+    // Normalização rigorosa das quebras de linha
+    privateKey = privateKey.replace(/\\n/g, '\n');
 
     const bigquery = new BigQuery({
       projectId,
