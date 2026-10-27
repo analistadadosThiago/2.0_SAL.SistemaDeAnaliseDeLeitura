@@ -17,22 +17,27 @@ export default async function handler(req, res) {
   try {
     const projectId = process.env.BIGQUERY_PROJECT_ID || 'leituradb';
     const clientEmail = process.env.BIGQUERY_CLIENT_EMAIL;
-    let privateKey = process.env.BIGQUERY_PRIVATE_KEY;
+    const base64Key = process.env.BIGQUERY_PRIVATE_KEY_BASE64 || process.env.BIGQUERY_PRIVATE_KEY;
 
-    if (!clientEmail || !privateKey) {
+    if (!clientEmail || !base64Key) {
       return res.status(500).json({
         error: 'Credenciais do BigQuery ausentes nas variáveis de ambiente da Vercel.'
       });
     }
 
-    // Limpeza profunda: remove aspas do início/fim caso tenham sido salvas acidentalmente no painel
-    privateKey = privateKey.trim();
-    if ((privateKey.startsWith('"') && privateKey.endsWith('"')) || (privateKey.startsWith("'") && privateKey.endsWith("'"))) {
-      privateKey = privateKey.slice(1, -1);
+    let privateKey = base64Key;
+
+    // Se estiver em Base64 (sem espaçamentos de chave pura no início), decodifica
+    if (!base64Key.includes('-----BEGIN PRIVATE KEY-----')) {
+      try {
+        privateKey = Buffer.from(base64Key, 'base64').toString('utf8');
+      } catch (e) {
+        // Se falhar a decodificação, mantém o original
+      }
     }
 
-    // Converte literais '\n' para quebras de linha reais
-    privateKey = privateKey.replace(/\\n/g, '\n');
+    // Normalização padrão das quebras de linha
+    privateKey = privateKey.trim().replace(/\\n/g, '\n');
 
     const bigquery = new BigQuery({
       projectId,
