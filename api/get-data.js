@@ -25,11 +25,15 @@ export default async function handler(req, res) {
     let clientEmail = process.env.BIGQUERY_CLIENT_EMAIL;
     let privateKey = process.env.BIGQUERY_PRIVATE_KEY;
 
-    // Suporte prioritário a GOOGLE_APPLICATION_CREDENTIALS e arquivo service-account.json
+    // Suporte prioritário a GOOGLE_APPLICATION_CREDENTIALS e arquivo credentials.json / service-account.json
     const possibleSaPaths = [
       process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      '/app/credentials.json',
+      '/app/service-account.json',
+      path.resolve(process.cwd(), 'credentials.json'),
       path.resolve(process.cwd(), 'service-account.json'),
       path.resolve(process.cwd(), 'google-credentials.json'),
+      path.resolve('/app/applet/credentials.json'),
       path.resolve('/app/applet/service-account.json'),
     ].filter(Boolean);
 

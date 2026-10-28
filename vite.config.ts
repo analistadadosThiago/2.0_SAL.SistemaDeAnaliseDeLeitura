@@ -13,6 +13,10 @@ export default defineConfig(({mode}) => {
     }
   }
 
+  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = '/app/credentials.json';
+  }
+
   const bigqueryProjectId = env.BIGQUERY_PROJECT_ID || process.env.BIGQUERY_PROJECT_ID || 'leiturabd';
   const bigqueryDataset = env.BIGQUERY_DATASET || process.env.BIGQUERY_DATASET || 'LeituraBD';
 
