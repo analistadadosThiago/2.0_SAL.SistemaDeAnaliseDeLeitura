@@ -1,7 +1,6 @@
 {
   "name": "2.0-sal",
   "private": true,
-  "packageManager": "pnpm@9.0.0",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
@@ -13,7 +12,6 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "@google-cloud/bigquery": "^9.5.0",
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
@@ -23,6 +21,7 @@
     "dotenv": "^17.2.3",
     "esbuild": "^0.27.3",
     "express": "^4.21.2",
+    "mongodb": "^6.3.0",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.546.0",
