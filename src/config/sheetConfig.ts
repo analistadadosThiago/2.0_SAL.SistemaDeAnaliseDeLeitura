@@ -8,6 +8,8 @@
  *  - Apenas o ID da planilha: "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
  */
 export const DEFAULT_GOOGLE_SHEET_URL: string = 
+  (typeof window !== 'undefined' && localStorage.getItem('SAL_GOOGLE_SHEET_URL')) ||
+  (typeof window !== 'undefined' && (window as any).__SAL_SHEET_URL__) ||
   (typeof process !== 'undefined' && process.env?.GOOGLE_SHEET_URL) ||
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_SHEET_URL) ||
   '';
