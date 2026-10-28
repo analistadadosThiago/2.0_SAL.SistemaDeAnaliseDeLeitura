@@ -11,6 +11,10 @@
     "lint": "tsc --noEmit",
     "start": "node server.js"
   },
+  "allowScripts": [
+    "esbuild",
+    "mongodb"
+  ],
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
