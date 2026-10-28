@@ -1,4 +1,5 @@
 import { DashboardResumo, DashboardLeituraTipo } from '../types';
+import { fetchGoogleSheetData } from './googleSheetsService';
 
 /**
  * SAL - Serviço Central de Dados integrado exclusivamente ao Google BigQuery
@@ -225,11 +226,21 @@ export async function fetchBigQueryData(): Promise<any[] | null> {
       return null;
     } catch (e: any) {
       if (tentativa === 2) {
-        console.warn('[BigQuery Vercel] Não foi possível conectar ao endpoint:', e?.message || e);
+        console.warn('[Vercel] Não foi possível conectar ao endpoint:', e?.message || e);
       }
       await new Promise(r => setTimeout(r, 200 * (tentativa + 1)));
     }
   }
+
+  // Fallback direto via Google Sheets caso o endpoint serverless não retorne linhas
+  try {
+    const sheetRows = await fetchGoogleSheetData();
+    if (sheetRows && sheetRows.length > 0) {
+      console.log(`[Google Sheets] ${sheetRows.length} registros obtidos diretamente via cliente`);
+      return sheetRows;
+    }
+  } catch (_) {}
+
   return null;
 }
 

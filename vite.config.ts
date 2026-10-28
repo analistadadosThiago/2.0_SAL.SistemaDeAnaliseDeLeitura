@@ -13,12 +13,10 @@ export default defineConfig(({mode}) => {
     }
   }
 
-  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    process.env.GOOGLE_APPLICATION_CREDENTIALS = '/app/credentials.json';
+  const googleSheetUrl = env.GOOGLE_SHEET_URL || process.env.GOOGLE_SHEET_URL || env.VITE_GOOGLE_SHEET_URL || '';
+  if (googleSheetUrl) {
+    process.env.GOOGLE_SHEET_URL = googleSheetUrl;
   }
-
-  const bigqueryProjectId = env.BIGQUERY_PROJECT_ID || process.env.BIGQUERY_PROJECT_ID || 'leiturabd';
-  const bigqueryDataset = env.BIGQUERY_DATASET || process.env.BIGQUERY_DATASET || 'LeituraBD';
 
   const vercelApiDevPlugin = () => ({
     name: 'vercel-api-dev-middleware',
@@ -47,10 +45,10 @@ export default defineConfig(({mode}) => {
             await handler(req, res);
             return;
           } catch (err: any) {
-            console.error('[BigQuery Vercel Dev] Erro ao consultar BigQuery via api/get-data.js:', err);
+            console.error('[Google Sheets Dev] Erro ao consultar dados via api/get-data.js:', err);
             res.statusCode = 500;
             res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: err.message || 'Erro ao consultar BigQuery' }));
+            res.end(JSON.stringify({ error: err.message || 'Erro ao consultar Google Sheets' }));
             return;
           }
         }
@@ -63,8 +61,7 @@ export default defineConfig(({mode}) => {
     plugins: [react(), tailwindcss(), vercelApiDevPlugin()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.BIGQUERY_PROJECT_ID': JSON.stringify(bigqueryProjectId),
-      'process.env.BIGQUERY_DATASET': JSON.stringify(bigqueryDataset),
+      'process.env.GOOGLE_SHEET_URL': JSON.stringify(googleSheetUrl),
     },
     resolve: {
       alias: {

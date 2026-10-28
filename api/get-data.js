@@ -1,9 +1,124 @@
-import { BigQuery } from '@google-cloud/bigquery';
-import fs from 'fs';
-import path from 'path';
+/**
+ * Função Serverless para Google Planilhas (Google Sheets)
+ * Substitui integralmente a conexão anterior com o BigQuery.
+ * 
+ * Permite leitura nativa de planilhas públicas ou publicadas na Web,
+ * convertendo os dados em JSON estruturado com os 22 campos do sistema:
+ * MÊS, ANO, INSTALACAO, MEDIDOR, REG, RAZAO, RZ_UL_LV, UL, FOTO, TIPO,
+ * MATR, NL, DATA, HORA, ENDERECO, LEITURA, CONSUMO, nosb_impedimento,
+ * nosb_simulacao, digitacao, cna, consistencia.
+ */
+
+function formatGoogleSheetsExportUrl(rawUrlOrId) {
+  if (!rawUrlOrId) return '';
+  const trimmed = rawUrlOrId.trim();
+
+  // Se já for link direto de CSV
+  if (trimmed.includes('output=csv') || trimmed.includes('format=csv') || trimmed.includes('out:csv')) {
+    return trimmed;
+  }
+
+  // Se for link publicado na Web
+  if (trimmed.includes('/pubhtml') || trimmed.includes('/pub?')) {
+    return trimmed.replace(/\/pubhtml.*/, '/pub?output=csv').replace(/\/pub\?.*/, '/pub?output=csv');
+  }
+
+  // Se for URL padrão do Google Drive / Spreadsheets
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (match && match[1]) {
+    const sheetId = match[1];
+    const gidMatch = trimmed.match(/gid=([0-9]+)/);
+    const gidParam = gidMatch ? `&gid=${gidMatch[1]}` : '';
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv${gidParam}`;
+  }
+
+  // Se for apenas o ID
+  if (/^[a-zA-Z0-9-_]{20,}$/.test(trimmed)) {
+    return `https://docs.google.com/spreadsheets/d/${trimmed}/export?format=csv`;
+  }
+
+  return trimmed;
+}
+
+function parseCSV(csvText) {
+  const rows = [];
+  let currentRow = [];
+  let currentVal = '';
+  let inQuotes = false;
+
+  const len = csvText.length;
+  for (let i = 0; i < len; i++) {
+    const char = csvText[i];
+    const nextChar = i + 1 < len ? csvText[i + 1] : '';
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentVal += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentVal.trim());
+      currentVal = '';
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++;
+      }
+      currentRow.push(currentVal.trim());
+      if (currentRow.some(val => val !== '')) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentVal = '';
+    } else {
+      currentVal += char;
+    }
+  }
+
+  if (currentVal || currentRow.length > 0) {
+    currentRow.push(currentVal.trim());
+    if (currentRow.some(val => val !== '')) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
+}
+
+function normalizeHeaderKey(rawHeader) {
+  if (!rawHeader) return '';
+  const clean = rawHeader.trim();
+  const lower = clean.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  if (lower === 'mes') return 'MÊS';
+  if (lower === 'ano') return 'ANO';
+  if (lower === 'instalacao') return 'INSTALACAO';
+  if (lower === 'medidor') return 'MEDIDOR';
+  if (lower === 'reg' || lower === 'regional') return 'REG';
+  if (lower === 'razao' || lower === 'rota') return 'RAZAO';
+  if (lower === 'rz_ul_lv' || lower === 'rzullv' || lower === 'livro') return 'RZ_UL_LV';
+  if (lower === 'ul') return 'UL';
+  if (lower === 'foto') return 'FOTO';
+  if (lower === 'tipo' || lower === 'tipo_ligacao') return 'TIPO';
+  if (lower === 'matr' || lower === 'matricula' || lower === 'leiturista') return 'MATR';
+  if (lower === 'nl' || lower === 'anomalia') return 'NL';
+  if (lower === 'data' || lower === 'data_leitura') return 'DATA';
+  if (lower === 'hora') return 'HORA';
+  if (lower === 'endereco') return 'ENDERECO';
+  if (lower === 'leitura' || lower === 'leitura_atual') return 'LEITURA ';
+  if (lower === 'consumo') return 'CONSUMO';
+  if (lower === 'nosb_impedimento' || lower === 'impedimento') return 'nosb_impedimento';
+  if (lower === 'nosb_simulacao' || lower === 'simulacao') return 'nosb_simulacao';
+  if (lower === 'digitacao') return 'digitacao';
+  if (lower === 'cna') return 'cna';
+  if (lower === 'consistencia' || lower === 'status') return 'consistencia';
+
+  return clean;
+}
 
 export default async function handler(req, res) {
-  // Cabeçalhos CORS para permitir requisições no ambiente Vercel e local
+  // Cabeçalhos CORS
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -18,100 +133,65 @@ export default async function handler(req, res) {
   }
 
   try {
-    let projectId = process.env.BIGQUERY_PROJECT_ID;
-    const rawDataset = process.env.BIGQUERY_DATASET;
-    // O dataset real no BigQuery chama-se 'LeituraBD' e contém a tabela 'dados_diarios'
-    const datasetId = (rawDataset && rawDataset.trim() !== 'dados_diarios') ? rawDataset.trim() : 'LeituraBD';
-    let clientEmail = process.env.BIGQUERY_CLIENT_EMAIL;
-    let privateKey = process.env.BIGQUERY_PRIVATE_KEY;
+    const queryUrl = (req.query && req.query.url) ? req.query.url : '';
+    const rawUrl = queryUrl || process.env.GOOGLE_SHEET_URL || process.env.VITE_GOOGLE_SHEET_URL || '';
 
-    // Suporte prioritário a GOOGLE_APPLICATION_CREDENTIALS e arquivo credentials.json / service-account.json
-    const possibleSaPaths = [
-      process.env.GOOGLE_APPLICATION_CREDENTIALS,
-      '/app/credentials.json',
-      '/app/service-account.json',
-      path.resolve(process.cwd(), 'credentials.json'),
-      path.resolve(process.cwd(), 'service-account.json'),
-      path.resolve(process.cwd(), 'google-credentials.json'),
-      path.resolve('/app/applet/credentials.json'),
-      path.resolve('/app/applet/service-account.json'),
-    ].filter(Boolean);
-
-    for (const p of possibleSaPaths) {
-      if (fs.existsSync(p)) {
-        try {
-          const saData = JSON.parse(fs.readFileSync(p, 'utf8'));
-          if (saData.client_email && saData.private_key) {
-            projectId = projectId || saData.project_id;
-            clientEmail = saData.client_email;
-            privateKey = saData.private_key;
-            break;
-          }
-        } catch (_) {}
-      }
+    if (!rawUrl || rawUrl.trim() === '') {
+      return res.status(200).json([]);
     }
 
-    projectId = projectId || 'leituradb';
+    const exportUrl = formatGoogleSheetsExportUrl(rawUrl);
+    const response = await fetch(exportUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'text/csv, application/csv, text/plain, */*'
+      }
+    });
 
-    if (!clientEmail || !privateKey) {
-      return res.status(500).json({
-        error: 'Credenciais do BigQuery ausentes nas variáveis de ambiente ou no arquivo da Service Account.'
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: `Erro ao buscar planilha do Google (${response.status}): ${response.statusText}`
       });
     }
 
-    // Normalização rigorosa da chave privada para resolver erros do OpenSSL
-    privateKey = privateKey ? privateKey.replace(/\\n/g, '\n') : '';
+    const csvText = await response.text();
+    if (csvText.includes('<!DOCTYPE html>') && (csvText.includes('accounts.google.com') || csvText.includes('ServiceLogin'))) {
+      return res.status(403).json({
+        error: 'A planilha informada requer permissão. Altere o compartilhamento para "Qualquer pessoa com o link pode ler" ou "Publicar na Web".'
+      });
+    }
 
-    // Suporte adicional para ambientes onde quebras de linha foram convertidas em espaços
-    if (privateKey.includes('-----BEGIN PRIVATE KEY-----') && !privateKey.includes('\n')) {
-      const parts = privateKey.split(' ');
-      if (parts.length > 6) {
-        const headerEnd = parts.findIndex((p, idx) => idx > 0 && p.includes('KEY-----'));
-        const footerStart = parts.findIndex((p, idx) => idx > headerEnd && p.includes('-----END'));
-        if (headerEnd !== -1 && footerStart !== -1) {
-          const bodyParts = parts.slice(headerEnd + 1, footerStart);
-          const cleanBodyParts = bodyParts.map(p => (p.length === 65 && p.startsWith('n')) ? p.substring(1) : p);
-          const base64Body = cleanBodyParts.join('');
-          privateKey = `-----BEGIN PRIVATE KEY-----\n${base64Body.match(/.{1,64}/g)?.join('\n')}\n-----END PRIVATE KEY-----\n`;
+    const matrix = parseCSV(csvText);
+    if (!matrix || matrix.length < 2) {
+      return res.status(200).json([]);
+    }
+
+    const headers = matrix[0].map(h => normalizeHeaderKey(h));
+    const records = [];
+
+    for (let r = 1; r < matrix.length; r++) {
+      const row = matrix[r];
+      if (!row || row.length === 0 || (row.length === 1 && !row[0])) continue;
+
+      const record = {};
+      for (let c = 0; c < headers.length; c++) {
+        const key = headers[c];
+        if (!key) continue;
+        const val = row[c] !== undefined ? row[c] : '';
+
+        if (['ANO', 'RAZAO', 'RZ_UL_LV', 'UL', 'NL', 'LEITURA ', 'CONSUMO', 'digitacao'].includes(key)) {
+          const num = Number(val.replace(',', '.').replace(/\s/g, ''));
+          record[key] = isNaN(num) ? val : num;
+        } else {
+          record[key] = val;
         }
       }
+      records.push(record);
     }
 
-    const bigquery = new BigQuery({
-      projectId,
-      credentials: {
-        client_email: clientEmail,
-        private_key: privateKey,
-      },
-    });
-
-    let rows = null;
-    let queryError = null;
-    const candidateDatasets = Array.from(new Set([datasetId, 'LeituraBD', 'dados_diarios'].filter(Boolean)));
-
-    for (const ds of candidateDatasets) {
-      try {
-        const query = `SELECT * FROM \`${projectId}.${ds}.dados_diarios\``;
-        const [result] = await bigquery.query(query);
-        rows = result;
-        break;
-      } catch (err) {
-        queryError = err;
-        // Se o erro for dataset não encontrado, tenta o próximo candidato
-        if (err.message && err.message.includes('Not found: Dataset')) {
-          continue;
-        }
-        throw err;
-      }
-    }
-
-    if (!rows && queryError) {
-      throw queryError;
-    }
-
-    return res.status(200).json(rows || []);
+    return res.status(200).json(records);
   } catch (error) {
-    console.error('Erro na função get-data do BigQuery (Vercel):', error);
+    console.error('Erro na função get-data do Google Sheets:', error);
     return res.status(500).json({ error: error.message });
   }
 }
