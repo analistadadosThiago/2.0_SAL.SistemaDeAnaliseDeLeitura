@@ -1449,3 +1449,15 @@ export async function consultaLeituras(params: {
 
   return { data: mapped, error: null };
 }
+
+/**
+ * Atualiza dinamicamente a URL da Google Planilha e recarrega os dados em tempo real
+ */
+export async function setGoogleSheetUrlAndReload(url: string): Promise<any[]> {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('SAL_GOOGLE_SHEET_URL', url.trim());
+    (window as any).__SAL_SHEET_URL__ = url.trim();
+  }
+  return fetchData(true);
+}
+

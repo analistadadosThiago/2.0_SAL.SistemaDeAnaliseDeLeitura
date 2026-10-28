@@ -14,10 +14,14 @@ import {
   ListOrdered,
   Sliders,
   FileText,
-  ChevronDown
+  ChevronDown,
+  FileSpreadsheet,
+  Loader2
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../lib/utils';
+import { DEFAULT_GOOGLE_SHEET_URL } from '../config/sheetConfig';
+import { setGoogleSheetUrlAndReload } from '../lib/dadosGeraisService';
 
 const menuGroups = [
   { 
@@ -61,8 +65,39 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     'Impressões': true,
     'Relatórios': true,
   });
-  const [currentTime, setCurrentTime] = useState(new Date());
   const location = useLocation();
+
+  const [isSheetModalOpen, setIsSheetModalOpen] = useState(false);
+  const [sheetInput, setSheetInput] = useState('');
+  const [isSavingSheet, setIsSavingSheet] = useState(false);
+  const [sheetStatusMsg, setSheetStatusMsg] = useState<{ text: string; isError: boolean } | null>(null);
+  const [hasConnectedSheet, setHasConnectedSheet] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('SAL_GOOGLE_SHEET_URL') || DEFAULT_GOOGLE_SHEET_URL || '';
+    setSheetInput(saved);
+    setHasConnectedSheet(Boolean(saved && saved.trim().length > 0));
+  }, []);
+
+  const handleSaveSheet = async () => {
+    setIsSavingSheet(true);
+    setSheetStatusMsg(null);
+    try {
+      const rows = await setGoogleSheetUrlAndReload(sheetInput.trim());
+      setHasConnectedSheet(Boolean(sheetInput.trim().length > 0));
+      if (rows && rows.length > 0) {
+        setSheetStatusMsg({ text: `Conectado com sucesso! ${rows.length} registros carregados.`, isError: false });
+        setTimeout(() => setIsSheetModalOpen(false), 1200);
+      } else {
+        setSheetStatusMsg({ text: 'Planilha salva. Se os dados não carregarem, certifique-se de que o link está como "Qualquer pessoa com o link pode ler".', isError: false });
+        setTimeout(() => setIsSheetModalOpen(false), 2000);
+      }
+    } catch (err: any) {
+      setSheetStatusMsg({ text: err.message || 'Erro ao carregar dados da planilha', isError: true });
+    } finally {
+      setIsSavingSheet(false);
+    }
+  };
 
   const toggleGroup = (label: string) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
@@ -194,12 +229,94 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* Botão de Conexão com Google Planilha */}
+            <button
+              onClick={() => setIsSheetModalOpen(true)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border shadow-xs cursor-pointer",
+                hasConnectedSheet
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                  : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+              )}
+              title="Configurar Planilha Google"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{hasConnectedSheet ? "Planilha Conectada" : "Conectar Planilha"}</span>
+              {hasConnectedSheet && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>}
+            </button>
+
             <div className="px-3 py-1 bg-zinc-100 rounded-full">
               <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sistema Ativo</span>
             </div>
           </div>
         </header>
+
+        {/* Modal de Conexão com Google Planilha */}
+        {isSheetModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-zinc-200 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs">
+                    <FileSpreadsheet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-zinc-900 leading-tight">Google Planilha (Sheets)</h3>
+                    <p className="text-[11px] text-zinc-500 font-medium">Fonte de dados exclusiva do SAL</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsSheetModalOpen(false)}
+                  className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-3 text-xs text-blue-800 leading-relaxed">
+                Cole abaixo a <strong>URL pública</strong> da sua planilha Google ou apenas o <strong>ID da planilha</strong>.
+                <div className="text-[11px] text-blue-600 mt-1">
+                  ✓ Certifique-se de que o acesso no Google Drive está como <em>"Qualquer pessoa com o link pode ler"</em>.
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700">Link ou ID da Google Planilha</label>
+                <input
+                  type="text"
+                  value={sheetInput}
+                  onChange={(e) => setSheetInput(e.target.value)}
+                  placeholder="https://docs.google.com/spreadsheets/d/SEU_ID/edit?usp=sharing"
+                  className="w-full px-3 py-2 text-xs border border-zinc-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              </div>
+
+              {sheetStatusMsg && (
+                <div className={cn("p-2.5 rounded-lg text-xs font-semibold", sheetStatusMsg.isError ? "bg-rose-50 text-rose-700 border border-rose-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200")}>
+                  {sheetStatusMsg.text}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setIsSheetModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-zinc-600 hover:bg-zinc-100 rounded-xl transition-colors"
+                >
+                  Fechar
+                </button>
+                <button
+                  onClick={handleSaveSheet}
+                  disabled={isSavingSheet}
+                  className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingSheet ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                  <span>Salvar e Carregar Dados</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto min-h-[calc(100vh-180px)]">
